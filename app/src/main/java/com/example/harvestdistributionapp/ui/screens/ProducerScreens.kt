@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import com.example.harvestdistributionapp.viewmodel.ProductViewModel
+import com.example.harvestdistributionapp.viewmodel.UiState
 import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -71,9 +73,10 @@ fun ProducerBottomBar(navController: NavController, currentRoute: String?) {
 fun ProducerHomeScreen(
     navController: NavController,
     state: AppState,
-    viewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val nombreUsuario by viewModel.nombreUsuario.collectAsState()
+    val nombreUsuario by authViewModel.nombreUsuario.collectAsState()
     val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
     var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "") }
 
@@ -104,9 +107,11 @@ fun ProducerHomeScreen(
         if (res.isBlank()) "--" else res
     }
 
-    val products = state.products.filter { it.producerId == state.currentUserId }
-    val requests = state.requests.filter { it.producerId == state.currentUserId }
-    val lowStock = products.count { it.status != AvailabilityStatus.AVAILABLE || it.quantity <= 25 }
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+    val products = allProducts.filter { it.productorId == currentProducerId || it.producerId == currentProducerId }
+    val requests = state.requests.filter { it.producerId == currentProducerId }
+    val lowStock = products.count { it.status != AvailabilityStatus.AVAILABLE || (if (it.stock > 0) it.stock <= 25 else it.quantity <= 25) }
     Scaffold(
         bottomBar = { ProducerBottomBar(navController, Screen.ProducerHome.route) },
         floatingActionButton = {
@@ -213,14 +218,33 @@ private fun ProducerProductCard(product: Product, onClick: () -> Unit, onEdit: (
 }
 
 @Composable
-fun ProducerProductsScreen(navController: NavController, state: AppState, lowStockOnly: Boolean = false) {
+fun ProducerProductsScreen(
+    navController: NavController,
+    state: AppState,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    lowStockOnly: Boolean = false
+) {
     var query by rememberSaveable { mutableStateOf("") }
     var statusFilter by rememberSaveable { mutableStateOf<AvailabilityStatus?>(null) }
-    val ownProducts = state.products.filter { it.producerId == state.currentUserId }
-    val products = ownProducts.filter {
-        InputValidator.matchesSearch(it, query) &&
-            (statusFilter == null || it.status == statusFilter) &&
-            (!lowStockOnly || it.status != AvailabilityStatus.AVAILABLE || it.quantity <= 25)
+    
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+    
+    val ownProducts = allProducts.filter { it.productorId == currentProducerId || it.producerId == currentProducerId }
+    val products = ownProducts.filter { product ->
+        val nameToCheck = product.titulo.ifBlank { product.name }
+        val categoryToCheck = product.category
+        val producerNameToCheck = product.producerName
+        val locationToCheck = product.location
+        val matchesSearch = query.isBlank() || listOf(nameToCheck, categoryToCheck, producerNameToCheck, locationToCheck)
+            .any { InputValidator.normalizeSearch(it).contains(InputValidator.normalizeSearch(query)) }
+            
+        val isLowStock = product.status != AvailabilityStatus.AVAILABLE || (if (product.stock > 0) product.stock <= 25 else product.quantity <= 25)
+        
+        matchesSearch &&
+            (statusFilter == null || product.status == statusFilter) &&
+            (!lowStockOnly || isLowStock)
     }
     Scaffold(
         topBar = {
@@ -287,8 +311,14 @@ fun ProducerProductsScreen(navController: NavController, state: AppState, lowSto
 }
 
 @Composable
-fun ProducerProductDetailScreen(navController: NavController, state: AppState, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId && it.producerId == state.currentUserId }
+fun ProducerProductDetailScreen(
+    navController: NavController,
+    state: AppState,
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     Scaffold(
         topBar = {
             SmallTopBarM3(
@@ -327,13 +357,14 @@ fun ProducerProductDetailScreen(navController: NavController, state: AppState, p
 }
 
 @Composable
-fun ProducerPublishScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
+fun ProducerPublishScreen(navController: NavController, state: AppState, viewModel: ProductViewModel) {
     ProductEditorScreen(navController, state, viewModel, existing = null)
 }
 
 @Composable
-fun ProducerEditProductScreen(navController: NavController, state: AppState, viewModel: AppViewModel, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId && it.producerId == state.currentUserId }
+fun ProducerEditProductScreen(navController: NavController, state: AppState, viewModel: ProductViewModel, productId: Int) {
+    val allProducts by viewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Editar producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "No puedes editar este producto", modifier = Modifier.padding(padding))
@@ -343,7 +374,7 @@ fun ProducerEditProductScreen(navController: NavController, state: AppState, vie
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProductEditorScreen(navController: NavController, state: AppState, viewModel: AppViewModel, existing: Product?) {
+private fun ProductEditorScreen(navController: NavController, state: AppState, viewModel: ProductViewModel, existing: Product?) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val productOptions = listOf("Jitomate Saladette", "Lechuga Orejona", "Miel artesanal", "Aguacate Hass", "Fresa de temporada", "Otro")
@@ -361,8 +392,25 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
     var imageUri by rememberSaveable { mutableStateOf(existing?.imageUri.orEmpty()) }
     var category by rememberSaveable { mutableStateOf(existing?.category ?: "verduras") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
     var photoSaving by remember { mutableStateOf(false) }
+
+    val publishState by viewModel.publishState.collectAsState()
+
+    LaunchedEffect(publishState) {
+        when (val st = publishState) {
+            is UiState.Error -> {
+                error = st.message
+                viewModel.resetPublishState()
+            }
+            is UiState.Success -> {
+                viewModel.resetPublishState()
+                navController.popBackStack()
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = publishState is UiState.Loading
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
@@ -475,29 +523,29 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
                 testTag = "product_submit",
                 onClick = {
                     if (!valid) { error = "Completa todos los campos y agrega una foto válida"; return@FilledBtn }
-                    val draft = ProductDraft(name, parsedQuantity!!, unit, parsedPrice!!, location, availableDate, imageUri, category)
-                    submitting = true
                     if (existing == null) {
-                        viewModel.createProduct(draft) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Error -> error = result.message
-                                is AppResult.Success -> navController.navigate(Screen.ProducerSuccess.createRoute(result.value.id)) {
-                                    popUpTo(Screen.ProducerPublish.route) { inclusive = true }
-                                }
-                            }
-                        }
+                        viewModel.publicarProducto(
+                            name = name,
+                            quantity = parsedQuantity!!,
+                            unit = unit,
+                            pricePerUnit = parsedPrice!!,
+                            location = location,
+                            availableDate = availableDate,
+                            imageUri = imageUri,
+                            category = category
+                        )
                     } else {
-                        viewModel.updateProduct(existing.id, draft) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Error -> error = result.message
-                                is AppResult.Success -> navController.navigate(Screen.ProducerProductDetail.createRoute(result.value.id)) {
-                                    popUpTo(Screen.ProducerEditProduct.pattern) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
-                        }
+                        viewModel.actualizarProducto(
+                            productId = existing.id,
+                            name = name,
+                            quantity = parsedQuantity!!,
+                            unit = unit,
+                            pricePerUnit = parsedPrice!!,
+                            location = location,
+                            availableDate = availableDate,
+                            imageUri = imageUri,
+                            category = category
+                        )
                     }
                 }
             )
@@ -506,8 +554,14 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
 }
 
 @Composable
-fun ProducerSuccessScreen(navController: NavController, state: AppState, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId && it.producerId == state.currentUserId }
+fun ProducerSuccessScreen(
+    navController: NavController,
+    state: AppState,
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

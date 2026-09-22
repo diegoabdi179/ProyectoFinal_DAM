@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.harvestdistributionapp.AppViewModel
+import com.example.harvestdistributionapp.viewmodel.ProductViewModel
 import com.example.harvestdistributionapp.data.*
 import com.example.harvestdistributionapp.ui.components.*
 import com.example.harvestdistributionapp.ui.navigation.Screen
@@ -71,10 +72,16 @@ fun BuyerBottomBar(navController: NavController, currentRoute: String?) {
 }
 
 @Composable
-fun BuyerHomeScreen(navController: NavController, state: AppState) {
+fun BuyerHomeScreen(
+    navController: NavController,
+    state: AppState,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
-    val products = state.products.filter { product ->
-        product.status != AvailabilityStatus.OUT && (selectedCategory == null || product.category == selectedCategory)
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val products = allProducts.filter { product ->
+        val cat = product.category.ifBlank { "verduras" }
+        product.status != AvailabilityStatus.OUT && (selectedCategory == null || cat == selectedCategory)
     }
     val user = state.currentUser
     val categories = listOf("frutas" to "Frutas", "verduras" to "Verduras", "otros" to "Otros")
@@ -191,21 +198,36 @@ private fun BuyerProductCard(product: Product, onClick: () -> Unit) {
 }
 
 @Composable
-fun BuyerSearchScreen(navController: NavController, state: AppState) {
+fun BuyerSearchScreen(
+    navController: NavController,
+    state: AppState,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf<String?>(null) }
     var localOnly by rememberSaveable { mutableStateOf(false) }
     var maxPrice by rememberSaveable { mutableStateOf<Double?>(null) }
     var availability by rememberSaveable { mutableStateOf<AvailabilityStatus?>(null) }
     val localCity = state.currentUser?.location?.substringBefore(',')?.trim().orEmpty()
-    val categories = listOf<String?>(null) + state.products.map(Product::category).distinct().sorted()
+
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val categories = listOf<String?>(null) + allProducts.map { it.category.ifBlank { "verduras" } }.distinct().sorted()
     val prices = listOf<Double?>(null, 20.0, 50.0, 100.0)
     val statuses = listOf<AvailabilityStatus?>(null, AvailabilityStatus.AVAILABLE, AvailabilityStatus.LIMITED, AvailabilityStatus.OUT)
-    val products = state.products.filter { product ->
-        InputValidator.matchesSearch(product, query) &&
-            (category == null || product.category == category) &&
-            (!localOnly || InputValidator.normalizeSearch(product.location).contains(InputValidator.normalizeSearch(localCity))) &&
-            (maxPrice?.let { product.pricePerUnit <= it } ?: true) &&
+    val products = allProducts.filter { product ->
+        val nameToCheck = product.titulo.ifBlank { product.name }
+        val categoryToCheck = product.category.ifBlank { "verduras" }
+        val producerNameToCheck = product.producerName
+        val locationToCheck = product.location
+        val priceToCheck = if (product.precio > 0.0) product.precio else product.pricePerUnit
+
+        val matchesSearch = query.isBlank() || listOf(nameToCheck, categoryToCheck, producerNameToCheck, locationToCheck)
+            .any { InputValidator.normalizeSearch(it).contains(InputValidator.normalizeSearch(query)) }
+
+        matchesSearch &&
+            (category == null || categoryToCheck == category) &&
+            (!localOnly || InputValidator.normalizeSearch(locationToCheck).contains(InputValidator.normalizeSearch(localCity))) &&
+            (maxPrice?.let { priceToCheck <= it } ?: true) &&
             (availability == null || product.status == availability)
     }
 
@@ -286,8 +308,14 @@ fun BuyerSearchScreen(navController: NavController, state: AppState) {
 }
 
 @Composable
-fun BuyerProductDetailScreen(navController: NavController, state: AppState, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId }
+fun BuyerProductDetailScreen(
+    navController: NavController,
+    state: AppState,
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "Es posible que haya sido eliminado", modifier = Modifier.padding(padding))
@@ -354,8 +382,15 @@ fun BuyerProductDetailScreen(navController: NavController, state: AppState, prod
 }
 
 @Composable
-fun BuyerRequestScreen(navController: NavController, state: AppState, viewModel: AppViewModel, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId }
+fun BuyerRequestScreen(
+    navController: NavController,
+    state: AppState,
+    viewModel: AppViewModel,
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Solicitar producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "Regresa y selecciona otro producto", modifier = Modifier.padding(padding))
