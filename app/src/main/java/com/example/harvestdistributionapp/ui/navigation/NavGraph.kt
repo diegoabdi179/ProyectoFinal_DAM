@@ -83,8 +83,14 @@ fun NavGraph(viewModel: AppViewModel) {
     NavHost(navController = navController, startDestination = Screen.Splash.route) {
         composable(Screen.Splash.route) { SplashScreen(navController, uiState) }
         composable(Screen.Welcome.route) { WelcomeScreen(navController) }
-        composable(Screen.Login.route) { LoginScreen(navController, viewModel) }
-        composable(Screen.SignUp.route) { SignUpScreen(navController, viewModel) }
+        composable(Screen.Login.route) {
+            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            LoginScreen(navController, authViewModel)
+        }
+        composable(Screen.SignUp.route) {
+            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            SignUpScreen(navController, authViewModel)
+        }
         composable(Screen.ForgotPassword.route) { ForgotPasswordScreen(navController) }
 
         composable(Screen.ProducerHome.route) { ProducerHomeScreen(navController, state) }
@@ -155,7 +161,10 @@ fun NavGraph(viewModel: AppViewModel) {
         }
 
         composable(Screen.Profile.route) { ProfileScreen(navController, state, viewModel) }
-        composable(Screen.EditProfile.route) { EditProfileScreen(navController, state, viewModel) }
+        composable(Screen.EditProfile.route) {
+            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            EditProfileScreen(navController, authViewModel)
+        }
         composable(Screen.ProfileInfo.route) { ProfileInfoScreen(navController, state) }
         composable(Screen.Settings.route) { SettingsScreen(navController, state, viewModel) }
     }

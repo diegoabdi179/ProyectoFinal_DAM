@@ -24,6 +24,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.example.harvestdistributionapp.data.AvailabilityStatus
 import com.example.harvestdistributionapp.data.InputValidator
 import com.example.harvestdistributionapp.data.RequestStatus
@@ -459,5 +466,29 @@ fun QuantitySelector(
                 .testTag("${testTagPrefix}_plus")
                 .background(MaterialTheme.colorScheme.primary, CircleShape)
         ) { Icon(Icons.Default.Add, contentDescription = "Aumentar cantidad", tint = MaterialTheme.colorScheme.onPrimary) }
+    }
+}
+
+/**
+ * Componente Composable para solicitar el permiso POST_NOTIFICATIONS
+ * en tiempo de ejecución para dispositivos con Android 13 (API 33) o superior.
+ */
+@Composable
+fun NotificationPermissionHandler() {
+    val context = LocalContext.current
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            // Puedes manejar aquí la respuesta del usuario si es necesario
+        }
+
+        LaunchedEffect(Unit) {
+            val permission = Manifest.permission.POST_NOTIFICATIONS
+            if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(permission)
+            }
+        }
     }
 }
