@@ -33,6 +33,9 @@ import com.example.harvestdistributionapp.data.UserAccount
 import com.example.harvestdistributionapp.data.UserRole
 import com.example.harvestdistributionapp.ui.components.*
 import com.example.harvestdistributionapp.ui.navigation.Screen
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import com.example.harvestdistributionapp.viewmodel.UiState
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.delay
 
 @Composable
@@ -112,12 +115,51 @@ fun WelcomeScreen(navController: NavController) {
 }
 
 @Composable
-fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
+fun LoginScreen(navController: NavController, viewModel: AuthViewModel) {
+    val email by viewModel.email.collectAsState()
+    val password by viewModel.password.collectAsState()
+    val authState by viewModel.authState.collectAsState()
+
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var infoMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is UiState.Error -> {
+                errorMessage = state.message
+                viewModel.resetState()
+            }
+            is UiState.Success -> {
+                val uid = state.data.uid
+                try {
+                    val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("usuarios")
+                        .document(uid)
+                        .get()
+                        .await()
+                    val rolDb = doc.getString("rol") ?: "comprador"
+                    val destination = if (rolDb.equals("productor", ignoreCase = true)) {
+                        Screen.ProducerHome.route
+                    } else {
+                        Screen.BuyerHome.route
+                    }
+                    navController.navigate(destination) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                } catch (_: Exception) {
+                    navController.navigate(Screen.BuyerHome.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = authState is UiState.Loading
 
     Scaffold(topBar = { SmallTopBarM3("Bienvenido", onBack = navController::popBackStack) }) { padding ->
         Column(
@@ -130,20 +172,21 @@ fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Correo electrónico",
                 value = email,
-                onValueChange = { email = it; errorMessage = null; infoMessage = null },
+                onValueChange = { viewModel.onEmailChanged(it); errorMessage = null },
                 type = "email",
                 trailingIcon = Icons.Default.Mail,
-                testTag = "login_email"
+                testTag = "login_email",
+                enabled = !submitting
             )
             M3Field(
                 label = "Contraseña",
                 value = password,
-                onValueChange = { password = it; errorMessage = null; infoMessage = null },
+                onValueChange = { viewModel.onPasswordChanged(it); errorMessage = null },
                 type = "password",
-                testTag = "login_password"
+                testTag = "login_password",
+                enabled = !submitting
             )
             errorMessage?.let { ErrorBanner(it) }
-            infoMessage?.let { InfoBanner(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextBtn(
                     "¿Olvidaste tu contraseña?",
@@ -151,42 +194,29 @@ fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
                     testTag = "forgot_password"
                 )
             }
-            FilledBtn(
-                text = if (submitting) "Iniciando…" else "Iniciar sesión",
+            Button(
+                onClick = { viewModel.loginUser() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("login_submit"),
                 enabled = !submitting,
-                testTag = "login_submit",
-                onClick = {
-                    errorMessage = InputValidator.validateEmail(email)
-                        ?: if (password.isBlank()) "Ingresa tu contraseña" else null
-                    if (errorMessage == null) {
-                        submitting = true
-                        viewModel.login(email, password) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Error -> errorMessage = result.message
-                                is AppResult.Success -> navigateAfterAuthentication(navController, result.value)
-                            }
-                        }
-                    }
+                shape = CircleShape
+            ) {
+                if (submitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Iniciar sesión", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 }
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HorizontalDivider(Modifier.weight(1f))
-                Text("o", modifier = Modifier.padding(horizontal = 16.dp))
-                HorizontalDivider(Modifier.weight(1f))
             }
-            OutlinedBtn(
-                text = "Continuar con Google",
-                icon = Icons.Default.Language,
-                testTag = "google_login",
-                onClick = {
-                    infoMessage = "Google Identity no está configurado en esta compilación. No se inició ninguna sesión."
-                    errorMessage = null
-                }
-            )
             TextButton(
                 onClick = { navController.navigate(Screen.SignUp.route) },
-                modifier = Modifier.heightIn(min = 48.dp).testTag("login_to_signup")
+                modifier = Modifier.heightIn(min = 48.dp).testTag("login_to_signup"),
+                enabled = !submitting
             ) {
                 Text("¿No tienes cuenta? ", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Crear cuenta", fontWeight = FontWeight.Medium)
@@ -235,15 +265,43 @@ fun ForgotPasswordScreen(navController: NavController) {
 }
 
 @Composable
-fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var selectedRole by rememberSaveable { mutableStateOf<UserRole?>(null) }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
+fun SignUpScreen(navController: NavController, viewModel: AuthViewModel) {
+    val name by viewModel.nombre.collectAsState()
+    val email by viewModel.email.collectAsState()
+    val password by viewModel.password.collectAsState()
+    val rol by viewModel.rol.collectAsState()
+    val authState by viewModel.authState.collectAsState()
 
-    Scaffold(topBar = { SmallTopBarM3("Crear cuenta", onBack = navController::popBackStack) }) { padding ->
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is UiState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.resetState()
+            }
+            is UiState.Success -> {
+                val destination = if (state.rol.trim().equals("productor", ignoreCase = true)) {
+                    Screen.ProducerHome.route
+                } else {
+                    Screen.BuyerHome.route
+                }
+                navController.navigate(destination) {
+                    popUpTo(Screen.SignUp.route) { inclusive = true }
+                    popUpTo(Screen.Login.route) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = authState is UiState.Loading
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = { SmallTopBarM3("Crear cuenta", onBack = navController::popBackStack) }
+    ) { padding ->
         Column(
             modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -251,53 +309,73 @@ fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
         ) {
             M3Logo(size = 72.dp)
             Text("Únete a la comunidad", style = MaterialTheme.typography.headlineSmall)
-            M3Field("Nombre completo", name, { name = it; errorMessage = null }, trailingIcon = Icons.Default.Person, testTag = "signup_name")
-            M3Field("Correo electrónico", email, { email = it; errorMessage = null }, type = "email", trailingIcon = Icons.Default.Mail, testTag = "signup_email")
-            M3Field("Contraseña", password, { password = it; errorMessage = null }, type = "password", supportingText = "Mínimo 8 caracteres, con letra y número", testTag = "signup_password")
-            errorMessage?.let { ErrorBanner(it) }
+            M3Field(
+                label = "Nombre completo",
+                value = name,
+                onValueChange = { viewModel.onNombreChanged(it) },
+                trailingIcon = Icons.Default.Person,
+                testTag = "signup_name",
+                enabled = !submitting
+            )
+            M3Field(
+                label = "Correo electrónico",
+                value = email,
+                onValueChange = { viewModel.onEmailChanged(it) },
+                type = "email",
+                trailingIcon = Icons.Default.Mail,
+                testTag = "signup_email",
+                enabled = !submitting
+            )
+            M3Field(
+                label = "Contraseña",
+                value = password,
+                onValueChange = { viewModel.onPasswordChanged(it) },
+                type = "password",
+                supportingText = "Mínimo 6 caracteres",
+                testTag = "signup_password",
+                enabled = !submitting
+            )
             Text("¿Cómo quieres usar Cosecha Directa?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth())
             RoleOption(
                 "Soy productor",
                 "Publica tu disponibilidad y atiende solicitudes.",
                 Icons.Default.Agriculture,
-                selectedRole == UserRole.PRODUCER,
-                { selectedRole = UserRole.PRODUCER; errorMessage = null },
+                rol == "productor",
+                { viewModel.onRolChanged("productor") },
                 "role_producer"
             )
             RoleOption(
                 "Soy comprador",
                 "Encuentra productos locales y solicita cantidades reales.",
                 Icons.Default.LocalGroceryStore,
-                selectedRole == UserRole.BUYER,
-                { selectedRole = UserRole.BUYER; errorMessage = null },
+                rol == "comprador",
+                { viewModel.onRolChanged("comprador") },
                 "role_buyer"
             )
-            FilledBtn(
-                text = if (submitting) "Creando…" else "Crear cuenta",
+            Button(
+                onClick = { viewModel.registerUser() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("signup_submit"),
                 enabled = !submitting,
-                testTag = "signup_submit",
-                onClick = {
-                    errorMessage = when {
-                        name.trim().length < 2 -> "Ingresa tu nombre completo"
-                        InputValidator.validateEmail(email) != null -> InputValidator.validateEmail(email)
-                        InputValidator.validatePassword(password) != null -> InputValidator.validatePassword(password)
-                        selectedRole == null -> "Selecciona cómo usarás la aplicación"
-                        else -> null
-                    }
-                    val role = selectedRole
-                    if (errorMessage == null && role != null) {
-                        submitting = true
-                        viewModel.signUp(name, email, password, role) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Error -> errorMessage = result.message
-                                is AppResult.Success -> navigateAfterAuthentication(navController, result.value)
-                            }
-                        }
-                    }
+                shape = CircleShape
+            ) {
+                if (submitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Crear cuenta", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 }
-            )
-            TextButton(onClick = { navController.navigate(Screen.Login.route) }, modifier = Modifier.heightIn(min = 48.dp)) {
+            }
+            TextButton(
+                onClick = { navController.navigate(Screen.Login.route) },
+                modifier = Modifier.heightIn(min = 48.dp),
+                enabled = !submitting
+            ) {
                 Text("¿Ya tienes cuenta? ", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Iniciar sesión", fontWeight = FontWeight.Medium)
             }

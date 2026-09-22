@@ -18,11 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.harvestdistributionapp.AppViewModel
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import kotlinx.coroutines.tasks.await
 import com.example.harvestdistributionapp.BuildConfig
 import com.example.harvestdistributionapp.data.*
 import com.example.harvestdistributionapp.ui.components.*
@@ -31,19 +32,55 @@ import com.example.harvestdistributionapp.ui.theme.SurfaceContainerHigh
 
 @Composable
 fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreRole by remember { mutableStateOf("") }
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "Usuario") }
+    var firestoreLocation by remember { mutableStateOf("Toluca, Estado de México") }
+    var firestoreBusiness by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreRole = doc.getString("rol") ?: ""
+                    firestoreName = doc.getString("nombre") ?: firebaseUser.displayName ?: "Usuario"
+                    firestoreLocation = doc.getString("ubicacion") ?: "Toluca, Estado de México"
+                    firestoreBusiness = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+        isLoading = false
+    }
+
     val user = state.currentUser
-    val isProducer = user?.role == UserRole.PRODUCER
-    val ownProducts = state.products.count { it.producerId == user?.id }
-    val attended = state.requests.count { it.producerId == user?.id && it.status != RequestStatus.PENDING }
+    val role = if (user != null) {
+        if (user.role == UserRole.PRODUCER) "productor" else "comprador"
+    } else {
+        firestoreRole
+    }
+
+    val isProducer = role.equals("productor", ignoreCase = true)
+    val ownProducts = state.products.count { it.producerId == (user?.id ?: firebaseUser?.uid) }
+    val attended = state.requests.count { it.producerId == (user?.id ?: firebaseUser?.uid) && it.status != RequestStatus.PENDING }
 
     Scaffold(
         topBar = { SmallTopBarM3("Perfil") },
         bottomBar = {
-            if (isProducer) ProducerBottomBar(navController, Screen.Profile.route)
-            else BuyerBottomBar(navController, Screen.Profile.route)
+            if (role.isNotBlank() && !isLoading) {
+                if (isProducer) ProducerBottomBar(navController, Screen.Profile.route)
+                else BuyerBottomBar(navController, Screen.Profile.route)
+            }
         }
     ) { padding ->
-        if (user == null) {
+        val currentUser = user
+        if (firebaseUser == null && currentUser == null) {
             EmptyState(
                 title = "Sesión no disponible",
                 message = "Vuelve a iniciar sesión para consultar tu perfil",
@@ -52,6 +89,21 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
             )
             return@Scaffold
         }
+
+        // Condición de guardia: Si el rol está vacío (""), nulo o cargando, mostrar únicamente un CircularProgressIndicator centrado
+        if (role.isBlank() || isLoading) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+
+        val name = currentUser?.name ?: firestoreName.ifBlank { firebaseUser?.email?.substringBefore("@") ?: "Usuario" }
+        val location = currentUser?.location ?: firestoreLocation.ifBlank { "Toluca, Estado de México" }
+        val businessName = currentUser?.businessName ?: firestoreBusiness
 
         Column(
             modifier = Modifier
@@ -72,7 +124,7 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            user.name.take(2).uppercase(),
+                            name.take(2).uppercase(),
                             color = Color.White,
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.testTag("profile_initials")
@@ -80,16 +132,16 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(user.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("profile_name"))
+                        Text(name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("profile_name"))
                         Text(
-                            if (isProducer) user.businessName.ifBlank { "Productor local" } else "Comprador",
+                            if (isProducer) businessName.ifBlank { "Productor local" } else "Comprador",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.LocationOn, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(4.dp))
-                            Text(user.location, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(location, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -141,46 +193,63 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
 }
 
 @Composable
-fun EditProfileScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
-    val user = state.currentUser
-    var name by rememberSaveable(user?.id) { mutableStateOf(user?.name.orEmpty()) }
-    var location by rememberSaveable(user?.id) { mutableStateOf(user?.location.orEmpty()) }
-    var businessName by rememberSaveable(user?.id) { mutableStateOf(user?.businessName.orEmpty()) }
+fun EditProfileScreen(navController: NavController, viewModel: AuthViewModel) {
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+
+    var name by rememberSaveable { mutableStateOf(firebaseUser?.displayName.orEmpty()) }
+    var location by rememberSaveable { mutableStateOf("") }
+    var businessName by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var saving by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    name = doc.getString("nombre") ?: firebaseUser.displayName.orEmpty()
+                    location = doc.getString("ubicacion").orEmpty()
+                    businessName = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     Scaffold(topBar = { SmallTopBarM3("Editar perfil", navController::popBackStack) }) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (user == null) {
+            if (firebaseUser == null) {
                 ErrorBanner("No hay una sesión activa")
-                return@Column
+                return@Scaffold
             }
-            M3Field("Nombre", name, { name = it }, testTag = "edit_profile_name")
-            M3Field("Ubicación", location, { location = it }, testTag = "edit_profile_location")
-            if (user.role == UserRole.PRODUCER) {
-                M3Field("Nombre del negocio", businessName, { businessName = it }, testTag = "edit_profile_business")
-            }
+            M3Field("Nombre", name, { name = it }, testTag = "edit_profile_name", enabled = !saving)
+            M3Field("Ubicación", location, { location = it }, testTag = "edit_profile_location", enabled = !saving)
+            M3Field("Nombre del negocio", businessName, { businessName = it }, testTag = "edit_profile_business", enabled = !saving)
             Text("Correo", style = MaterialTheme.typography.labelLarge)
-            Text(user.email, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("edit_profile_email"))
+            Text(firebaseUser.email.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("edit_profile_email"))
             error?.let { ErrorBanner(it) }
             FilledBtn(
                 text = if (saving) "Guardando…" else "Guardar cambios",
                 onClick = {
                     error = when {
                         name.isBlank() -> "Ingresa tu nombre"
-                        location.isBlank() -> "Ingresa tu ubicación"
                         else -> null
                     }
                     if (error == null) {
                         saving = true
-                        viewModel.updateProfile(name, location, businessName) { result ->
+                        viewModel.updateFirestoreProfile(name, location, businessName) { success, msg ->
                             saving = false
-                            when (result) {
-                                is AppResult.Success -> navController.popBackStack()
-                                is AppResult.Error -> error = result.message
+                            if (success) {
+                                navController.popBackStack()
+                            } else {
+                                error = msg
                             }
                         }
                     }
@@ -195,30 +264,87 @@ fun EditProfileScreen(navController: NavController, state: AppState, viewModel: 
 
 @Composable
 fun ProfileInfoScreen(navController: NavController, state: AppState) {
-    val user = state.currentUser
-    val ownProducts = state.products.filter { it.producerId == user?.id }
-    val ownRequests = state.requests.filter {
-        if (user?.role == UserRole.PRODUCER) it.producerId == user.id else it.buyerId == user?.id
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreRole by remember { mutableStateOf("") }
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "Usuario") }
+    var firestoreLocation by remember { mutableStateOf("Toluca, Estado de México") }
+    var firestoreBusiness by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreRole = doc.getString("rol") ?: ""
+                    firestoreName = doc.getString("nombre") ?: firebaseUser.displayName ?: "Usuario"
+                    firestoreLocation = doc.getString("ubicacion") ?: "Toluca, Estado de México"
+                    firestoreBusiness = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+        isLoading = false
     }
+
+    val user = state.currentUser
+    val role = if (user != null) {
+        if (user.role == UserRole.PRODUCER) "productor" else "comprador"
+    } else {
+        firestoreRole
+    }
+
     Scaffold(topBar = { SmallTopBarM3("Mi información", navController::popBackStack) }) { padding ->
+        if (firebaseUser == null) {
+            Column(
+                Modifier.padding(padding).fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ErrorBanner("No hay una sesión activa")
+            }
+            return@Scaffold
+        }
+
+        // Condición de guardia
+        if (role.isBlank() || isLoading) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+
+        val name = user?.name ?: firestoreName
+        val email = user?.email ?: firebaseUser.email.orEmpty()
+        val roleStr = if (role.equals("productor", ignoreCase = true)) "Productor" else "Comprador"
+        val location = user?.location ?: firestoreLocation
+        val businessName = user?.businessName ?: firestoreBusiness
+
+        val ownProducts = state.products.filter { it.producerId == (user?.id ?: firebaseUser.uid) }
+        val ownRequests = state.requests.filter {
+            if (role.equals("productor", ignoreCase = true)) it.producerId == (user?.id ?: firebaseUser.uid) else it.buyerId == (user?.id ?: firebaseUser.uid)
+        }
+
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (user == null) {
-                ErrorBanner("No hay una sesión activa")
-                return@Column
-            }
-            InfoCard("Nombre", user.name)
-            InfoCard("Correo", user.email)
-            InfoCard("Rol", if (user.role == UserRole.PRODUCER) "Productor" else "Comprador")
-            InfoCard("Ubicación", user.location)
-            if (user.role == UserRole.PRODUCER) {
-                InfoCard("Negocio", user.businessName.ifBlank { "Sin nombre comercial" })
+            InfoCard("Nombre", name)
+            InfoCard("Correo", email)
+            InfoCard("Rol", roleStr)
+            InfoCard("Ubicación", location)
+            if (roleStr == "Productor") {
+                InfoCard("Negocio", businessName.ifBlank { "Sin nombre comercial" })
                 InfoCard("Productos publicados", ownProducts.size.toString())
             }
             InfoCard("Solicitudes", ownRequests.size.toString())
-            InfoBanner("Los datos de esta versión se guardan únicamente en este dispositivo.")
+            InfoBanner("Los datos de esta versión se sincronizan con Firebase Firestore.")
         }
     }
 }
@@ -280,7 +406,6 @@ fun ProducerPublicProfileScreen(navController: NavController, state: AppState, p
         ?: state.users.firstOrNull { it.id == producerId && it.role == UserRole.PRODUCER }?.let {
             ProducerProfile(it.id, it.name, it.location, it.businessName.ifBlank { "Productor local" })
         }
-    val products = state.products.filter { it.producerId == producerId && it.status != AvailabilityStatus.OUT }
     Scaffold(topBar = { SmallTopBarM3("Perfil del productor", navController::popBackStack) }) { padding ->
         if (profile == null) {
             EmptyState("Productor no encontrado", "Es posible que el perfil ya no esté disponible", Icons.Default.PersonSearch, Modifier.padding(padding))
@@ -306,24 +431,6 @@ fun ProducerPublicProfileScreen(navController: NavController, state: AppState, p
                         Text(profile.location, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Text("Productos disponibles (${products.size})", style = MaterialTheme.typography.titleMedium)
-                products.forEach { product ->
-                    Surface(
-                        onClick = { navController.navigate(Screen.BuyerProductDetail.createRoute(product.id)) },
-                        modifier = Modifier.fillMaxWidth().testTag("public_product_${product.id}"),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(product.name, fontWeight = FontWeight.Bold)
-                                Text("${product.quantity} ${product.unit} · ${product.displayPrice()}")
-                            }
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Ver producto")
-                        }
-                    }
-                }
-                if (products.isEmpty()) InfoBanner("Este productor no tiene productos disponibles por ahora.")
             }
         }
     }
@@ -348,7 +455,21 @@ private fun InfoCard(label: String, value: String) {
 }
 
 @Composable
-private fun ProfileMenuItem(
+private fun InfoBanner(message: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(message, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+fun ProfileMenuItem(
     icon: ImageVector,
     label: String,
     isDanger: Boolean,

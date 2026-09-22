@@ -23,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -66,8 +68,42 @@ fun ProducerBottomBar(navController: NavController, currentRoute: String?) {
 }
 
 @Composable
-fun ProducerHomeScreen(navController: NavController, state: AppState) {
-    val user = state.currentUser
+fun ProducerHomeScreen(
+    navController: NavController,
+    state: AppState,
+    viewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val nombreUsuario by viewModel.nombreUsuario.collectAsState()
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "") }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null && nombreUsuario.isBlank() && firestoreName.isBlank()) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreName = doc.getString("nombre") ?: ""
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    val displayName = nombreUsuario.ifBlank { firestoreName.ifBlank { state.currentUser?.name ?: firebaseUser?.email?.substringBefore("@") ?: "Productor" } }
+    val firstName = displayName.trim().split(Regex("\\s+")).firstOrNull() ?: "Productor"
+
+    val initials = run {
+        val parts = displayName.trim().split(Regex("\\s+"))
+        val first = parts.getOrNull(0)?.take(1)?.uppercase() ?: ""
+        val second = parts.getOrNull(1)?.take(1)?.uppercase() ?: ""
+        val res = "$first$second"
+        if (res.isBlank()) "--" else res
+    }
+
     val products = state.products.filter { it.producerId == state.currentUserId }
     val requests = state.requests.filter { it.producerId == state.currentUserId }
     val lowStock = products.count { it.status != AvailabilityStatus.AVAILABLE || it.quantity <= 25 }
@@ -94,13 +130,13 @@ fun ProducerHomeScreen(navController: NavController, state: AppState) {
                             modifier = Modifier.size(48.dp).testTag("producer_avatar")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(user?.name?.take(2)?.uppercase() ?: "--", color = MaterialTheme.colorScheme.onPrimary)
+                                Text(initials, color = MaterialTheme.colorScheme.onPrimary)
                             }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     Text("Hola", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${user?.name ?: "Productor"} 👋", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("$firstName 👋", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 }
             }
             item {
