@@ -93,10 +93,22 @@ fun NavGraph(viewModel: AppViewModel) {
         }
         composable(Screen.ForgotPassword.route) { ForgotPasswordScreen(navController) }
 
-        composable(Screen.ProducerHome.route) { ProducerHomeScreen(navController, state) }
-        composable(Screen.ProducerProducts.route) { ProducerProductsScreen(navController, state) }
-        composable(Screen.ProducerLowStock.route) { ProducerProductsScreen(navController, state, lowStockOnly = true) }
-        composable(Screen.ProducerPublish.route) { ProducerPublishScreen(navController, state, viewModel) }
+        composable(Screen.ProducerHome.route) {
+            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            ProducerHomeScreen(navController, state, productViewModel = productViewModel)
+        }
+        composable(Screen.ProducerProducts.route) {
+            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            ProducerProductsScreen(navController, state, productViewModel = productViewModel)
+        }
+        composable(Screen.ProducerLowStock.route) {
+            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            ProducerProductsScreen(navController, state, productViewModel = productViewModel, lowStockOnly = true)
+        }
+        composable(Screen.ProducerPublish.route) {
+            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            ProducerPublishScreen(navController, state, productViewModel)
+        }
         composable(Screen.ProducerRequests.route) { ProducerRequestsScreen(navController, state, viewModel) }
         composable(
             Screen.ProducerProductDetail.route,
@@ -105,7 +117,10 @@ fun NavGraph(viewModel: AppViewModel) {
         composable(
             Screen.ProducerEditProduct.route,
             arguments = listOf(navArgument("productId") { type = NavType.IntType })
-        ) { entry -> ProducerEditProductScreen(navController, state, viewModel, entry.requireInt("productId")) }
+        ) { entry ->
+            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            ProducerEditProductScreen(navController, state, productViewModel, entry.requireInt("productId"))
+        }
         composable(
             Screen.ProducerSuccess.route,
             arguments = listOf(navArgument("productId") { type = NavType.IntType })

@@ -46,33 +46,39 @@ data class ProducerProfile(
 )
 
 data class Product(
-    val id: Int,
-    val producerId: String,
-    val producerName: String,
-    val name: String,
-    val quantity: Int,
-    val unit: String,
-    val pricePerUnit: Double,
-    val status: AvailabilityStatus,
-    val location: String,
-    val availableDate: String,
-    val imageUri: String,
-    val category: String
+    val id: Int = 1,
+    val productorId: String = "",
+    val titulo: String = "",
+    val descripcion: String = "",
+    val precio: Double = 0.0,
+    val stock: Int = 0,
+    // Legacy fields for backward compatibility with existing mock UI
+    val producerId: String = "",
+    val producerName: String = "",
+    val name: String = "",
+    val quantity: Int = 0,
+    val unit: String = "kg",
+    val pricePerUnit: Double = 0.0,
+    val status: AvailabilityStatus = AvailabilityStatus.AVAILABLE,
+    val location: String = "",
+    val availableDate: String = "",
+    val imageUri: String = "",
+    val category: String = ""
 )
 
 data class PurchaseRequest(
-    val id: Int,
-    val buyerId: String,
-    val buyerName: String,
-    val productId: Int,
-    val producerId: String,
-    val productName: String,
-    val quantity: Int,
-    val unit: String,
-    val requiredDate: String,
-    val status: RequestStatus,
-    val pricePerUnit: Double,
-    val location: String,
+    val id: Int = 0,
+    val buyerId: String = "",
+    val buyerName: String = "",
+    val productId: Int = 0,
+    val producerId: String = "",
+    val productName: String = "",
+    val quantity: Int = 0,
+    val unit: String = "kg",
+    val requiredDate: String = "",
+    val status: RequestStatus = RequestStatus.PENDING,
+    val pricePerUnit: Double = 0.0,
+    val location: String = "",
     val message: String = "",
     val productImageUri: String = "",
     val createdAtEpochMillis: Long = System.currentTimeMillis()
@@ -89,7 +95,7 @@ data class AppSettings(
 data class AppState(
     val users: List<UserAccount> = emptyList(),
     val producerProfiles: List<ProducerProfile> = seedProducerProfiles(),
-    val products: List<Product> = seedProducts(),
+    val products: List<Product> = emptyList(),
     val requests: List<PurchaseRequest> = emptyList(),
     val currentUserId: String? = null,
     val settings: AppSettings = AppSettings()
@@ -150,7 +156,7 @@ object InputValidator {
     fun matchesSearch(product: Product, query: String): Boolean {
         val needle = normalizeSearch(query)
         if (needle.isBlank()) return true
-        return listOf(product.name, product.category, product.producerName, product.location)
+        return listOf(product.name, product.category, product.producerName, product.location, product.titulo, product.descripcion)
             .any { normalizeSearch(it).contains(needle) }
     }
 }
@@ -160,7 +166,7 @@ fun formatMoney(value: Double): String {
     return "$$rendered"
 }
 
-fun Product.displayPrice(): String = "${formatMoney(pricePerUnit)} / $unit"
+fun Product.displayPrice(): String = "${formatMoney(if (pricePerUnit > 0.0) pricePerUnit else precio)} / $unit"
 
 fun availabilityForQuantity(quantity: Int): AvailabilityStatus = when {
     quantity <= 0 -> AvailabilityStatus.OUT
@@ -176,10 +182,4 @@ fun seedProducerProfiles(): List<ProducerProfile> = listOf(
     ProducerProfile("producer-carlos", "Carlos Vega", "Lerma, Estado de México", "Fresas del Valle", false)
 )
 
-fun seedProducts(): List<Product> = listOf(
-    Product(1, "producer-juan", "Juan García", "Jitomate Saladette", 80, "kg", 18.0, availabilityForQuantity(80), "Toluca", futureIsoDate(1), "https://images.unsplash.com/photo-1546554137-f86b9593a222?w=800&h=600&fit=crop&auto=format", "verduras"),
-    Product(2, "producer-maria", "María López", "Lechuga Orejona", 40, "piezas", 12.0, availabilityForQuantity(40), "Metepec", futureIsoDate(1), "https://images.unsplash.com/photo-1622205313162-be1d5712a43f?w=800&h=600&fit=crop&auto=format", "verduras"),
-    Product(3, "producer-roberto", "Roberto Ríos", "Miel artesanal", 25, "frascos", 95.0, availabilityForQuantity(25), "Calimaya", futureIsoDate(4), "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=800&h=600&fit=crop&auto=format", "otros"),
-    Product(4, "producer-ana", "Ana Martínez", "Aguacate Hass", 60, "kg", 35.0, availabilityForQuantity(60), "Zinacantepec", futureIsoDate(2), "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=800&h=600&fit=crop&auto=format", "frutas"),
-    Product(5, "producer-carlos", "Carlos Vega", "Fresa de temporada", 30, "kg", 45.0, availabilityForQuantity(30), "Lerma", futureIsoDate(1), "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=800&h=600&fit=crop&auto=format", "frutas")
-)
+fun seedProducts(): List<Product> = emptyList()
