@@ -143,14 +143,12 @@ fun LoginScreen(navController: NavController, viewModel: AuthViewModel) {
                         Screen.BuyerHome.route
                     }
                     navController.navigate(destination) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                         launchSingleTop = true
                     }
                 } catch (_: Exception) {
                     navController.navigate(Screen.BuyerHome.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                         launchSingleTop = true
                     }
                 }
@@ -287,8 +285,7 @@ fun SignUpScreen(navController: NavController, viewModel: AuthViewModel) {
                     Screen.BuyerHome.route
                 }
                 navController.navigate(destination) {
-                    popUpTo(Screen.SignUp.route) { inclusive = true }
-                    popUpTo(Screen.Login.route) { inclusive = true }
+                    popUpTo(0) { inclusive = true }
                     launchSingleTop = true
                 }
             }
@@ -416,7 +413,7 @@ private fun RoleOption(
 private fun navigateAfterAuthentication(navController: NavController, user: UserAccount) {
     val destination = if (user.role == UserRole.PRODUCER) Screen.ProducerHome.route else Screen.BuyerHome.route
     navController.navigate(destination) {
-        popUpTo(Screen.Welcome.route) { inclusive = true }
+        popUpTo(0) { inclusive = true }
         launchSingleTop = true
     }
 }

@@ -67,18 +67,18 @@ data class Product(
 )
 
 data class PurchaseRequest(
-    val id: Int,
-    val buyerId: String,
-    val buyerName: String,
-    val productId: Int,
-    val producerId: String,
-    val productName: String,
-    val quantity: Int,
-    val unit: String,
-    val requiredDate: String,
-    val status: RequestStatus,
-    val pricePerUnit: Double,
-    val location: String,
+    val id: Int = 0,
+    val buyerId: String = "",
+    val buyerName: String = "",
+    val productId: Int = 0,
+    val producerId: String = "",
+    val productName: String = "",
+    val quantity: Int = 0,
+    val unit: String = "kg",
+    val requiredDate: String = "",
+    val status: RequestStatus = RequestStatus.PENDING,
+    val pricePerUnit: Double = 0.0,
+    val location: String = "",
     val message: String = "",
     val productImageUri: String = "",
     val createdAtEpochMillis: Long = System.currentTimeMillis()
@@ -95,7 +95,7 @@ data class AppSettings(
 data class AppState(
     val users: List<UserAccount> = emptyList(),
     val producerProfiles: List<ProducerProfile> = seedProducerProfiles(),
-    val products: List<Product> = seedProducts(),
+    val products: List<Product> = emptyList(),
     val requests: List<PurchaseRequest> = emptyList(),
     val currentUserId: String? = null,
     val settings: AppSettings = AppSettings()
@@ -182,10 +182,4 @@ fun seedProducerProfiles(): List<ProducerProfile> = listOf(
     ProducerProfile("producer-carlos", "Carlos Vega", "Lerma, Estado de México", "Fresas del Valle", false)
 )
 
-fun seedProducts(): List<Product> = listOf(
-    Product(id = 1, producerId = "producer-juan", producerName = "Juan García", name = "Jitomate Saladette", quantity = 80, unit = "kg", pricePerUnit = 18.0, status = availabilityForQuantity(80), location = "Toluca", availableDate = futureIsoDate(1), imageUri = "https://images.unsplash.com/photo-1546554137-f86b9593a222?w=800&h=600&fit=crop&auto=format", category = "verduras", titulo = "Jitomate Saladette", descripcion = "Jitomate fresco de huerto", precio = 18.0, stock = 80),
-    Product(id = 2, producerId = "producer-maria", producerName = "María López", name = "Lechuga Orejona", quantity = 40, unit = "piezas", pricePerUnit = 12.0, status = availabilityForQuantity(40), location = "Metepec", availableDate = futureIsoDate(1), imageUri = "https://images.unsplash.com/photo-1622205313162-be1d5712a43f?w=800&h=600&fit=crop&auto=format", category = "verduras", titulo = "Lechuga Orejona", descripcion = "Lechuga hidropónica", precio = 12.0, stock = 40),
-    Product(id = 3, producerId = "producer-roberto", producerName = "Roberto Ríos", name = "Miel artesanal", quantity = 25, unit = "frascos", pricePerUnit = 95.0, status = availabilityForQuantity(25), location = "Calimaya", availableDate = futureIsoDate(4), imageUri = "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=800&h=600&fit=crop&auto=format", category = "otros", titulo = "Miel artesanal", descripcion = "Miel pura de abeja", precio = 95.0, stock = 25),
-    Product(id = 4, producerId = "producer-ana", producerName = "Ana Martínez", name = "Aguacate Hass", quantity = 60, unit = "kg", pricePerUnit = 35.0, status = availabilityForQuantity(60), location = "Zinacantepec", availableDate = futureIsoDate(2), imageUri = "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=800&h=600&fit=crop&auto=format", category = "frutas", titulo = "Aguacate Hass", descripcion = "Aguacate de exportación", precio = 35.0, stock = 60),
-    Product(id = 5, producerId = "producer-carlos", producerName = "Carlos Vega", name = "Fresa de temporada", quantity = 30, unit = "kg", pricePerUnit = 45.0, status = availabilityForQuantity(30), location = "Lerma", availableDate = futureIsoDate(1), imageUri = "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=800&h=600&fit=crop&auto=format", category = "frutas", titulo = "Fresa de temporada", descripcion = "Fresas dulces recién cosechadas", precio = 45.0, stock = 30)
-)
+fun seedProducts(): List<Product> = emptyList()

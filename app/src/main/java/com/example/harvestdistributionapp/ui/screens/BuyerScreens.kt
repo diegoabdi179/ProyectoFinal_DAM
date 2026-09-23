@@ -31,6 +31,9 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.harvestdistributionapp.AppViewModel
 import com.example.harvestdistributionapp.viewmodel.ProductViewModel
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import com.example.harvestdistributionapp.viewmodel.UiState
+import kotlinx.coroutines.tasks.await
 import com.example.harvestdistributionapp.data.*
 import com.example.harvestdistributionapp.ui.components.*
 import com.example.harvestdistributionapp.ui.navigation.Screen
@@ -75,15 +78,46 @@ fun BuyerBottomBar(navController: NavController, currentRoute: String?) {
 fun BuyerHomeScreen(
     navController: NavController,
     state: AppState,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
+    val nombreUsuario by authViewModel.nombreUsuario.collectAsState()
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "") }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null && nombreUsuario.isBlank() && firestoreName.isBlank()) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreName = doc.getString("nombre") ?: ""
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    val displayName = nombreUsuario.ifBlank { firestoreName.ifBlank { state.currentUser?.name ?: firebaseUser?.email?.substringBefore("@") ?: "Comprador" } }
+    val firstName = displayName.trim().split(Regex("\\s+")).firstOrNull() ?: "Comprador"
+
+    val initials = run {
+        val parts = displayName.trim().split(Regex("\\s+"))
+        val first = parts.getOrNull(0)?.take(1)?.uppercase() ?: ""
+        val second = parts.getOrNull(1)?.take(1)?.uppercase() ?: ""
+        val res = "$first$second"
+        if (res.isBlank()) "--" else res
+    }
+
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
     val products = allProducts.filter { product ->
         val cat = product.category.ifBlank { "verduras" }
         product.status != AvailabilityStatus.OUT && (selectedCategory == null || cat == selectedCategory)
     }
-    val user = state.currentUser
     val categories = listOf("frutas" to "Frutas", "verduras" to "Verduras", "otros" to "Otros")
 
     Scaffold(
@@ -106,13 +140,13 @@ fun BuyerHomeScreen(
                             modifier = Modifier.size(48.dp).testTag("buyer_avatar")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(user?.name?.take(2)?.uppercase() ?: "--", color = MaterialTheme.colorScheme.onPrimary)
+                                Text(initials, color = MaterialTheme.colorScheme.onPrimary)
                             }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     Text("Buenos días", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${user?.name ?: "Comprador"} 👋", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("$firstName 👋", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         onClick = { navController.navigate(Screen.BuyerSearch.route) },
@@ -364,16 +398,16 @@ fun BuyerProductDetailScreen(
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
+                    val pProducer = product.producerName.ifBlank { "Productor" }
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-                            Text(product.producerName.take(2).uppercase())
+                            Text(getBuyerInitials(pProducer))
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(product.producerName, style = MaterialTheme.typography.titleMedium)
+                            Text(pProducer, style = MaterialTheme.typography.titleMedium)
                             Text(product.location, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextBtn("Ver perfil", { navController.navigate(Screen.ProducerProfile.createRoute(product.producerId)) }, testTag = "view_producer_profile")
                     }
                 }
             }
@@ -402,7 +436,27 @@ fun BuyerRequestScreen(
     var location by rememberSaveable { mutableStateOf(state.currentUser?.location.orEmpty()) }
     var message by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
+
+    val requestState by productViewModel.requestState.collectAsState()
+
+    LaunchedEffect(requestState) {
+        when (val st = requestState) {
+            is UiState.Error -> {
+                error = st.message
+                productViewModel.resetRequestState()
+            }
+            is UiState.Success -> {
+                productViewModel.resetRequestState()
+                navController.navigate(Screen.BuyerHome.route) {
+                    popUpTo(Screen.BuyerHome.route) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = requestState is UiState.Loading
 
     Scaffold(topBar = { SmallTopBarM3("Solicitar producto", onBack = navController::popBackStack) }) { padding ->
         Column(
@@ -430,16 +484,21 @@ fun BuyerRequestScreen(
                 icon = Icons.AutoMirrored.Filled.Send,
                 testTag = "request_submit",
                 onClick = {
-                    submitting = true
-                    viewModel.createRequest(RequestDraft(product.id, quantity, date, location, message)) { result ->
-                        submitting = false
-                        when (result) {
-                            is AppResult.Error -> error = result.message
-                            is AppResult.Success -> navController.navigate(Screen.BuyerRequestSent.createRoute(result.value.id)) {
-                                popUpTo(Screen.BuyerRequest.pattern) { inclusive = true }
-                            }
-                        }
+                    if (quantity < 1 || location.isBlank() || date.isBlank()) {
+                        error = "Completa todos los campos obligatorios"
+                        return@FilledBtn
                     }
+                    productViewModel.crearSolicitud(
+                        productId = product.id,
+                        productName = product.titulo.ifBlank { product.name },
+                        producerId = product.productorId.ifBlank { product.producerId },
+                        quantity = quantity,
+                        pricePerUnit = if (product.precio > 0.0) product.precio else product.pricePerUnit,
+                        requiredDate = date,
+                        location = location,
+                        message = message,
+                        productImageUri = product.imageUri
+                    )
                 }
             )
         }
@@ -505,10 +564,18 @@ fun BuyerRequestSentScreen(navController: NavController, state: AppState, reques
 }
 
 @Composable
-fun BuyerMyRequestsScreen(navController: NavController, state: AppState) {
+fun BuyerMyRequestsScreen(
+    navController: NavController,
+    state: AppState,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf("Todas", "Pendientes", "Aceptadas", "Rechazadas")
-    val ownRequests = state.requests.filter { it.buyerId == state.currentUserId }
+    val requests by productViewModel.solicitudesFlow.collectAsState(initial = emptyList())
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    val currentBuyerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+
+    val ownRequests = requests.filter { it.buyerId == currentBuyerId }
     val filtered = ownRequests.filter { request ->
         when (selectedTab) {
             1 -> request.status == RequestStatus.PENDING
@@ -565,60 +632,48 @@ private fun BuyerRequestCard(request: PurchaseRequest) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BuyerPostNeedScreen(navController: NavController, state: AppState) {
-    val productOptions = state.products.filter { it.quantity > 0 }.distinctBy { InputValidator.normalizeSearch(it.name) }
-    var expanded by remember { mutableStateOf(false) }
-    var selectedProductId by rememberSaveable { mutableIntStateOf(-1) }
-    val selectedProduct = productOptions.firstOrNull { it.id == selectedProductId }
+fun BuyerPostNeedScreen(
+    navController: NavController,
+    state: AppState
+) {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var quantity by rememberSaveable { mutableIntStateOf(5) }
     var date by rememberSaveable { mutableStateOf(futureIsoDate()) }
     var location by rememberSaveable { mutableStateOf(state.currentUser?.location.orEmpty()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+
     Scaffold(topBar = { SmallTopBarM3("¿Qué necesitas?", onBack = navController::popBackStack) }) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text("Selecciona un producto y los datos que realmente necesitas.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                OutlinedTextField(
-                    value = selectedProduct?.name.orEmpty(),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Producto") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth().testTag("need_product_selector")
-                )
-                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    productOptions.forEach { product ->
-                        DropdownMenuItem(
-                            text = { Text(product.name) },
-                            onClick = { selectedProductId = product.id; quantity = 5.coerceAtMost(product.quantity).coerceAtLeast(1); expanded = false; error = null }
-                        )
-                    }
-                }
-            }
+            Text("Escribe el producto que buscas y los datos requeridos.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            M3Field(
+                label = "Buscar producto...",
+                value = searchQuery,
+                onValueChange = { searchQuery = it; error = null },
+                trailingIcon = Icons.Default.Search,
+                testTag = "need_product_search"
+            )
             Text("Cantidad que necesitas", style = MaterialTheme.typography.titleMedium)
-            QuantitySelector(quantity, selectedProduct?.unit ?: "unidades", { quantity = it; error = null }, testTagPrefix = "need_quantity")
+            QuantitySelector(quantity, "kg", { quantity = it; error = null }, testTagPrefix = "need_quantity")
             DateField("Fecha que necesitas", date, { date = it; error = null }, testTag = "need_date")
             M3Field("Ubicación", location, { location = it; error = null }, trailingIcon = Icons.Default.LocationOn, testTag = "need_location")
             error?.let { ErrorBanner(it) }
             FilledBtn(
                 "Buscar productores",
                 onClick = {
-                    val product = selectedProduct
                     error = when {
-                        product == null -> "Selecciona un producto"
+                        searchQuery.isBlank() -> "Ingresa el nombre del producto"
                         quantity < 1 -> "La cantidad mínima es 1"
                         date.isBlank() -> "Selecciona una fecha"
                         !isIsoDateTodayOrFuture(date) -> "Selecciona una fecha de hoy o posterior"
                         location.isBlank() -> "Ingresa una ubicación"
                         else -> null
                     }
-                    if (error == null && product != null) {
-                        navController.navigate(Screen.BuyerPostResults.createRoute(product.name, quantity, date, location))
+                    if (error == null) {
+                        navController.navigate(Screen.BuyerPostResults.createRoute(searchQuery.trim(), quantity, date, location))
                     }
                 },
                 icon = Icons.Default.Search,
@@ -635,11 +690,15 @@ fun BuyerPostResultsScreen(
     productName: String,
     quantity: Int,
     date: String,
-    location: String
+    location: String,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val matches = state.products.filter {
-        InputValidator.normalizeSearch(it.name) == InputValidator.normalizeSearch(productName) &&
-            it.quantity >= quantity && it.status != AvailabilityStatus.OUT
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val matches = allProducts.filter { product ->
+        val name = product.titulo.ifBlank { product.name }
+        val stock = if (product.stock > 0) product.stock else product.quantity
+        InputValidator.normalizeSearch(name) == InputValidator.normalizeSearch(productName) &&
+            stock >= quantity && product.status != AvailabilityStatus.OUT
     }
     Scaffold(
         topBar = {
@@ -666,16 +725,20 @@ fun BuyerPostResultsScreen(
             item { Text("${matches.size} COINCIDENCIAS", style = MaterialTheme.typography.labelMedium) }
             if (matches.isEmpty()) item { EmptyState("Sin coincidencias", "No hay productores con esa cantidad disponible", Icons.Default.SearchOff) }
             items(matches, key = Product::id) { product ->
+                val pProducer = product.producerName.ifBlank { "Productor" }
+                val pInitials = if (product.producerName.isNotBlank()) product.producerName.take(2).uppercase() else "PR"
+                val pStock = if (product.stock > 0) product.stock else product.quantity
+                val pPrice = product.displayPrice()
                 Surface(shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-                                Text(product.producerName.take(2).uppercase())
+                                Text(pInitials)
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(product.producerName, style = MaterialTheme.typography.titleMedium)
-                                Text("${product.quantity} ${product.unit} · ${product.displayPrice()}")
+                                Text(pProducer, style = MaterialTheme.typography.titleMedium)
+                                Text("$pStock ${product.unit} · $pPrice")
                             }
                             AvailChip(product.status)
                         }
@@ -721,4 +784,14 @@ private fun BuyerProductSummary(product: Product) {
             }
         }
     }
+}
+
+private fun getBuyerInitials(name: String): String {
+    val clean = name.ifBlank { "Productor" }
+    if (clean.equals("Productor", ignoreCase = true)) return "PR"
+    val parts = clean.trim().split(Regex("\\s+"))
+    val first = parts.getOrNull(0)?.take(1)?.uppercase() ?: ""
+    val second = parts.getOrNull(1)?.take(1)?.uppercase() ?: ""
+    val res = "$first$second"
+    return if (res.isBlank()) "PR" else res
 }

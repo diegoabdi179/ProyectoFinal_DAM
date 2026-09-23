@@ -591,11 +591,21 @@ fun ProducerSuccessScreen(
 }
 
 @Composable
-fun ProducerRequestsScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
+fun ProducerRequestsScreen(
+    navController: NavController,
+    state: AppState,
+    viewModel: AppViewModel,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var message by rememberSaveable { mutableStateOf<String?>(null) }
     val tabs = listOf("Todas", "Pendientes", "Aceptadas", "Rechazadas")
-    val own = state.requests.filter { it.producerId == state.currentUserId }
+
+    val allRequests by productViewModel.producerRequestsFlow.collectAsState(initial = emptyList())
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+
+    val own = allRequests.filter { it.producerId == currentProducerId }
     val filtered = own.filter {
         when (selectedTab) {
             1 -> it.status == RequestStatus.PENDING
@@ -624,7 +634,11 @@ fun ProducerRequestsScreen(navController: NavController, state: AppState, viewMo
                         ProducerRequestCard(
                             request,
                             onOpen = { navController.navigate(Screen.ProducerRequestDetail.createRoute(request.id)) },
-                            onStatus = { status -> viewModel.updateRequestStatus(request.id, status) { if (it is AppResult.Error) message = it.message } }
+                            onStatus = { status ->
+                                productViewModel.actualizarEstadoSolicitud(request.id, status) { success ->
+                                    if (!success) message = "Error al actualizar estado"
+                                }
+                            }
                         )
                     }
                 }

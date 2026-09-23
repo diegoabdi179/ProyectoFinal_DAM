@@ -171,6 +171,95 @@ class FirebaseRepository(
     }
 
     /**
+     * Guarda una solicitud en la colección "solicitudes" de Firestore.
+     */
+    suspend fun guardarSolicitudFirestore(request: PurchaseRequest): Result<String> {
+        return try {
+            Log.d(TAG, "Guardando PurchaseRequest en Firestore...")
+            val generatedId = if (request.id <= 0) System.currentTimeMillis().toInt().absoluteValue else request.id
+            val docRef = firestore.collection("solicitudes").document(generatedId.toString())
+            val requestConId = request.copy(id = generatedId)
+            docRef.set(requestConId).await()
+            Log.d(TAG, "PurchaseRequest guardada con ID: $generatedId")
+            Result.Success(generatedId.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al guardar PurchaseRequest: ${e.message}", e)
+            Result.Error(e)
+        }
+    }
+
+    /**
+     * Escucha en tiempo real las solicitudes donde el 'producerId' coincide con el usuario actual.
+     */
+    fun obtenerSolicitudesProductorRealtime(producerId: String): Flow<Result<List<PurchaseRequest>>> = callbackFlow {
+        val listener = firestore.collection("solicitudes")
+            .whereEqualTo("producerId", producerId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(Result.Error(error))
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val requests = mutableListOf<PurchaseRequest>()
+                    for (doc in snapshot.documents) {
+                        try {
+                            val req = doc.toObject(PurchaseRequest::class.java)
+                            if (req != null) {
+                                requests.add(req)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error mapeando solicitud del productor: ${e.message}", e)
+                        }
+                    }
+                    trySend(Result.Success(requests))
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    /**
+     * Escucha en tiempo real las solicitudes donde el 'buyerId' coincide con el usuario actual.
+     */
+    fun obtenerSolicitudesCompradorRealtime(buyerId: String): Flow<Result<List<PurchaseRequest>>> = callbackFlow {
+        val listener = firestore.collection("solicitudes")
+            .whereEqualTo("buyerId", buyerId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(Result.Error(error))
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val requests = mutableListOf<PurchaseRequest>()
+                    for (doc in snapshot.documents) {
+                        try {
+                            val req = doc.toObject(PurchaseRequest::class.java)
+                            if (req != null) {
+                                requests.add(req)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error mapeando solicitud del comprador: ${e.message}", e)
+                        }
+                    }
+                    trySend(Result.Success(requests))
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    /**
+     * Actualiza el estado de una solicitud en Firestore.
+     */
+    suspend fun actualizarEstadoSolicitud(requestId: Int, newStatus: RequestStatus): Result<Unit> {
+        return try {
+            val docRef = firestore.collection("solicitudes").document(requestId.toString())
+            docRef.update("status", newStatus).await()
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
+    /**
      * Guarda un producto en la colección "productos" de Firestore.
      */
     suspend fun guardarProduct(product: Product): Result<String> {
@@ -178,7 +267,30 @@ class FirebaseRepository(
             Log.d(TAG, "Guardando Product en Firestore...")
             val generatedId = if (product.id <= 0) System.currentTimeMillis().toInt().absoluteValue else product.id
             val docRef = firestore.collection("productos").document(generatedId.toString())
-            val productConId = product.copy(id = generatedId)
+
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            var realProducerName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+                ?: currentUser?.email?.substringBefore("@")
+                ?: "Productor"
+
+            if (currentUser != null) {
+                try {
+                    val userDoc = firestore.collection("usuarios").document(currentUser.uid).get().await()
+                    val nombreDb = userDoc.getString("nombre")
+                    if (!nombreDb.isNullOrBlank()) {
+                        realProducerName = nombreDb
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val finalProducerName = if (product.producerName.isBlank()) realProducerName else product.producerName
+
+            val productConId = product.copy(
+                id = generatedId,
+                producerName = finalProducerName,
+                productorId = if (product.producerId.isBlank()) currentUser?.uid.orEmpty() else product.producerId,
+                producerId = if (product.producerId.isBlank()) currentUser?.uid.orEmpty() else product.producerId
+            )
             docRef.set(productConId).await()
             Log.d(TAG, "Product guardado con ID: $generatedId")
             Result.Success(generatedId.toString())
@@ -195,7 +307,30 @@ class FirebaseRepository(
         return try {
             Log.d(TAG, "Actualizando Product en Firestore con ID: $productId...")
             val docRef = firestore.collection("productos").document(productId.toString())
-            val productConId = product.copy(id = productId)
+
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            var realProducerName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+                ?: currentUser?.email?.substringBefore("@")
+                ?: "Productor"
+
+            if (currentUser != null) {
+                try {
+                    val userDoc = firestore.collection("usuarios").document(currentUser.uid).get().await()
+                    val nombreDb = userDoc.getString("nombre")
+                    if (!nombreDb.isNullOrBlank()) {
+                        realProducerName = nombreDb
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val finalProducerName = if (product.producerName.isBlank()) realProducerName else product.producerName
+
+            val productConId = product.copy(
+                id = productId,
+                producerName = finalProducerName,
+                productorId = if (product.productorId.isBlank()) currentUser?.uid.orEmpty() else product.productorId,
+                producerId = if (product.producerId.isBlank()) currentUser?.uid.orEmpty() else product.producerId
+            )
             docRef.set(productConId, com.google.firebase.firestore.SetOptions.merge()).await()
             Log.d(TAG, "Product actualizado con ID: $productId")
             Result.Success(productId.toString())
