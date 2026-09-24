@@ -309,6 +309,7 @@ fun BuyerSearchScreen(
                     TextField(
                         value = query,
                         onValueChange = { query = it },
+                        label = { Text("Buscar") },
                         placeholder = { Text("Buscar producto…") },
                         singleLine = true,
                         modifier = Modifier.weight(1f).testTag("buyer_search_input"),

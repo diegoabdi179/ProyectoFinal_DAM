@@ -1,7 +1,9 @@
 package com.example.harvestdistributionapp.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,15 +55,22 @@ fun LoginScreen(
             )
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(padding),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
                 text = "Bienvenido a Cosecha Directa",
                 style = MaterialTheme.typography.headlineMedium
             )
@@ -124,10 +133,12 @@ fun LoginScreen(
 
             TextButton(
                 onClick = onNavigateToRegister,
-                enabled = !isLoading
+                enabled = !isLoading,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
             ) {
                 Text("¿No tienes una cuenta? Regístrate")
             }
+        }
         }
     }
 }

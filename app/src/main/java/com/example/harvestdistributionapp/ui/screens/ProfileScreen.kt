@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -459,7 +462,7 @@ private fun InfoBanner(message: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(message, textAlign = TextAlign.Center)
@@ -492,7 +495,7 @@ fun ProfileMenuItem(
             }
             Spacer(Modifier.width(16.dp))
             Text(label, Modifier.weight(1f), color = if (isDanger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            if (!isDanger) Icon(Icons.Default.ChevronRight, "Abrir $label")
+            if (!isDanger) Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (showDivider) HorizontalDivider(Modifier.padding(start = 72.dp))
     }

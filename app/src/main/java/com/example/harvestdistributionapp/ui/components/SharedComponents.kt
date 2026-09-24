@@ -17,6 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -220,7 +226,8 @@ fun TextBtn(
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = if (testTag != null) Modifier.testTag(testTag) else Modifier
+        modifier = (if (testTag != null) Modifier.testTag(testTag) else Modifier)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
     }
@@ -316,7 +323,12 @@ fun DateField(
         Box(
             Modifier
                 .matchParentSize()
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                 .testTag(testTag)
+                .semantics {
+                    contentDescription = "Seleccionar fecha para $label"
+                    role = Role.Button
+                }
                 .clickable { showPicker = true }
         )
     }
@@ -349,7 +361,8 @@ fun FilterChipM3(
     FilterChip(
         selected = active,
         onClick = onClick,
-        modifier = if (testTag != null) Modifier.testTag(testTag) else Modifier,
+        modifier = (if (testTag != null) Modifier.testTag(testTag) else Modifier)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
         label = { Text(label) },
         leadingIcon = when {
             active -> ({ Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) })
@@ -386,7 +399,7 @@ fun ErrorBanner(message: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     ) {
         Text(message, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
     }
@@ -398,7 +411,7 @@ fun InfoBanner(message: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     ) {
         Text(message, modifier = Modifier.padding(12.dp), textAlign = TextAlign.Center)
     }

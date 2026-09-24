@@ -80,19 +80,24 @@ fun WelcomeScreen(navController: NavController) {
         topBar = { SmallTopBarM3(title = "Cosecha Directa") },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&h=600&fit=crop&auto=format",
-                contentDescription = "Campo agrícola al amanecer",
-                modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(28.dp)),
-                contentScale = ContentScale.Crop
-            )
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 600.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                AsyncImage(
+                    model = "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&h=600&fit=crop&auto=format",
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 400.dp).clip(RoundedCornerShape(28.dp)),
+                    contentScale = ContentScale.Crop
+                )
             Text(
                 "Productos locales.\nConexiones directas.",
                 style = MaterialTheme.typography.displaySmall.copy(fontSize = 32.sp, lineHeight = 40.sp),
@@ -115,6 +120,7 @@ fun WelcomeScreen(navController: NavController) {
                 Text("¿Ya tienes cuenta? ", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Iniciar sesión", fontWeight = FontWeight.Bold)
             }
+        }
         }
     }
 }
@@ -173,11 +179,15 @@ fun LoginScreen(navController: NavController, viewModel: AuthViewModel) {
     val submitting = authState is UiState.Loading
 
     Scaffold(topBar = { SmallTopBarM3("Bienvenido", onBack = navController::popBackStack) }) { padding ->
-        Column(
-            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
         ) {
+            Column(
+                modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             M3Logo(size = 80.dp)
             Text("Inicia sesión para continuar", style = MaterialTheme.typography.headlineSmall)
             M3Field(
@@ -233,6 +243,7 @@ fun LoginScreen(navController: NavController, viewModel: AuthViewModel) {
                 Text("Crear cuenta", fontWeight = FontWeight.Medium)
             }
         }
+        }
     }
 }
 
@@ -242,11 +253,15 @@ fun ForgotPasswordScreen(navController: NavController) {
     var message by rememberSaveable { mutableStateOf<String?>(null) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     Scaffold(topBar = { SmallTopBarM3("Recuperar contraseña", onBack = navController::popBackStack) }) { padding ->
-        Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Icon(Icons.Default.MarkEmailRead, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(
+                modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Icon(Icons.Default.MarkEmailRead, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
             Text("Recuperación de cuenta", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "Esta versión local no dispone de un servidor de correo. La acción informa el estado real y no simula el envío.",
@@ -271,6 +286,7 @@ fun ForgotPasswordScreen(navController: NavController) {
                     }
                 }
             )
+        }
         }
     }
 }
@@ -312,11 +328,15 @@ fun SignUpScreen(navController: NavController, viewModel: AuthViewModel) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { SmallTopBarM3("Crear cuenta", onBack = navController::popBackStack) }
     ) { padding ->
-        Column(
-            modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            Column(
+                modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             M3Logo(size = 72.dp)
             Text("Únete a la comunidad", style = MaterialTheme.typography.headlineSmall)
             M3Field(
@@ -389,6 +409,7 @@ fun SignUpScreen(navController: NavController, viewModel: AuthViewModel) {
                 Text("¿Ya tienes cuenta? ", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Iniciar sesión", fontWeight = FontWeight.Medium)
             }
+        }
         }
     }
 }

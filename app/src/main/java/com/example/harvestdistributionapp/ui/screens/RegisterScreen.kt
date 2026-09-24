@@ -54,16 +54,22 @@ fun RegisterScreen(
             )
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Text(
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
                 text = "Regístrate en Cosecha Directa",
                 style = MaterialTheme.typography.headlineSmall
             )
@@ -161,10 +167,12 @@ fun RegisterScreen(
 
             TextButton(
                 onClick = onNavigateToLogin,
-                enabled = !isLoading
+                enabled = !isLoading,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
             ) {
                 Text("¿Ya tienes una cuenta? Inicia sesión")
             }
+        }
         }
     }
 }
