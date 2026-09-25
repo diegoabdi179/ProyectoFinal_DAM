@@ -1,5 +1,6 @@
 package com.example.harvestdistributionapp.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.harvestdistributionapp.data.FirebaseRepository
@@ -63,7 +64,6 @@ class ProductViewModel(
         }
     }.stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5_000), initialValue = emptyList())
 
-    // Flujo requerido de solicitudes del comprador (solicitudesFlow)
     val solicitudesFlow: StateFlow<List<PurchaseRequest>> = buyerRequestsFlow
 
     fun resetPublishState() {
@@ -75,7 +75,7 @@ class ProductViewModel(
     }
 
     /**
-     * Publica y guarda un nuevo producto en la colección "productos" de Firestore asignando cada campo de forma individual.
+     * Publica y guarda un nuevo producto en la colección "productos" de Firestore subiendo la imagen a Cloudinary si es local.
      */
     fun publicarProducto(
         name: String,
@@ -115,6 +115,14 @@ class ProductViewModel(
         _publishState.value = UiState.Loading
         viewModelScope.launch {
             val generatedId = System.currentTimeMillis().toInt().absoluteValue
+            var finalImageUri = imageUri
+            if (imageUri.startsWith("content://") || imageUri.startsWith("file://")) {
+                val uploadedUrl = repository.subirImagenCloudinary(Uri.parse(imageUri))
+                if (uploadedUrl.isNotBlank()) {
+                    finalImageUri = uploadedUrl
+                }
+            }
+
             val product = Product(
                 id = generatedId,
                 producerId = producerId,
@@ -128,7 +136,7 @@ class ProductViewModel(
                 precio = pricePerUnit,
                 location = location.trim(),
                 availableDate = availableDate,
-                imageUri = imageUri,
+                imageUri = finalImageUri,
                 category = category,
                 status = availabilityForQuantity(quantity),
                 descripcion = ""
@@ -146,7 +154,7 @@ class ProductViewModel(
     }
 
     /**
-     * Actualiza un producto existente en la colección "productos" de Firestore usando su ID original.
+     * Actualiza un producto existente en la colección "productos" de Firestore subiendo la imagen a Cloudinary si es local.
      */
     fun actualizarProducto(
         productId: Int,
@@ -186,6 +194,14 @@ class ProductViewModel(
 
         _publishState.value = UiState.Loading
         viewModelScope.launch {
+            var finalImageUri = imageUri
+            if (imageUri.startsWith("content://") || imageUri.startsWith("file://")) {
+                val uploadedUrl = repository.subirImagenCloudinary(Uri.parse(imageUri))
+                if (uploadedUrl.isNotBlank()) {
+                    finalImageUri = uploadedUrl
+                }
+            }
+
             val product = Product(
                 id = productId,
                 producerId = producerId,
@@ -199,7 +215,7 @@ class ProductViewModel(
                 precio = pricePerUnit,
                 location = location.trim(),
                 availableDate = availableDate,
-                imageUri = imageUri,
+                imageUri = finalImageUri,
                 category = category,
                 status = availabilityForQuantity(quantity),
                 descripcion = ""

@@ -16,6 +16,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            com.cloudinary.android.MediaManager.init(this, mapOf("cloud_name" to "obwd5szq"))
+        } catch (_: Exception) {}
         enableEdgeToEdge()
         setContent {
             val uiState = appViewModel.uiState.collectAsStateWithLifecycle().value

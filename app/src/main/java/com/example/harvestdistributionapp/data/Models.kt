@@ -35,7 +35,9 @@ data class UserAccount(
     val role: UserRole,
     val location: String = "Toluca, Estado de México",
     val businessName: String = ""
-)
+) {
+    constructor() : this("", "", "", "", "", UserRole.BUYER, "", "")
+}
 
 data class ProducerProfile(
     val id: String,
@@ -43,7 +45,9 @@ data class ProducerProfile(
     val location: String,
     val businessName: String = "Productor local",
     val verified: Boolean = false
-)
+) {
+    constructor() : this("", "", "", "", false)
+}
 
 data class Product(
     val id: Int = 1,
@@ -64,7 +68,9 @@ data class Product(
     val availableDate: String = "",
     val imageUri: String = "",
     val category: String = ""
-)
+) {
+    constructor() : this(1, "", "", "", 0.0, 0, "", "", "", 0, "kg", 0.0, AvailabilityStatus.AVAILABLE, "", "", "", "")
+}
 
 data class PurchaseRequest(
     val id: Int = 0,
@@ -83,6 +89,8 @@ data class PurchaseRequest(
     val productImageUri: String = "",
     val createdAtEpochMillis: Long = System.currentTimeMillis()
 ) {
+    constructor() : this(0, "", "", 0, "", "", 0, "kg", "", RequestStatus.PENDING, 0.0, "", "", "", 0L)
+
     val total: Double
         get() = quantity * pricePerUnit
 }

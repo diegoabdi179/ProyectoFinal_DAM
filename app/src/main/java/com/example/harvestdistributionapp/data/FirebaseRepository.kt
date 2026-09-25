@@ -1,13 +1,19 @@
 package com.example.harvestdistributionapp.data
 
+import android.net.Uri
 import android.util.Log
+import com.cloudinary.android.MediaManager
+import com.cloudinary.android.callback.ErrorInfo
+import com.cloudinary.android.callback.UploadCallback
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
+import kotlin.coroutines.resume
 import kotlin.math.absoluteValue
 
 /**
@@ -356,5 +362,46 @@ class FirebaseRepository(
                 }
             }
         awaitClose { listener.remove() }
+    }
+
+    /**
+     * Sube una imagen local a Cloudinary y retorna la URL pública segura.
+     */
+    suspend fun subirImagenCloudinary(uri: Uri): String = suspendCancellableCoroutine { continuation ->
+        try {
+            MediaManager.get().upload(uri)
+                .unsigned("app_cosecha")
+                .callback(object : UploadCallback {
+                    override fun onStart(requestId: String) {
+                        Log.d(TAG, "Cloudinary upload started: $requestId")
+                    }
+                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                    override fun onSuccess(requestId: String, resultData: Map<Any?, Any?>) {
+                        val secureUrl = resultData["secure_url"]?.toString().orEmpty()
+                        Log.d(TAG, "Cloudinary upload success: $secureUrl")
+                        if (continuation.isActive) {
+                            continuation.resume(secureUrl)
+                        }
+                    }
+                    override fun onError(requestId: String, error: ErrorInfo) {
+                        Log.e(TAG, "Cloudinary upload error: ${error.description}")
+                        if (continuation.isActive) {
+                            continuation.resume("")
+                        }
+                    }
+                    override fun onReschedule(requestId: String, error: ErrorInfo) {
+                        Log.w(TAG, "Cloudinary upload rescheduled: ${error.description}")
+                        if (continuation.isActive) {
+                            continuation.resume("")
+                        }
+                    }
+                })
+                .dispatch()
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during Cloudinary upload dispatch: ${e.message}", e)
+            if (continuation.isActive) {
+                continuation.resume("")
+            }
+        }
     }
 }
