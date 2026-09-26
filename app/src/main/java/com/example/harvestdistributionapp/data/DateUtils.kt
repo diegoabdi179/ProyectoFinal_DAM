@@ -1,6 +1,7 @@
 package com.example.harvestdistributionapp.data
 
 import java.text.SimpleDateFormat
+import java.text.ParsePosition
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -24,7 +25,10 @@ fun futureIsoDate(daysFromToday: Int = 1): String {
 fun epochMillisToIsoDate(epochMillis: Long): String = isoDateFormatter(utc).format(Date(epochMillis))
 
 fun isIsoDateTodayOrFuture(value: String): Boolean {
-    val selectedDate = runCatching { isoDateFormatter().parse(value) }.getOrNull() ?: return false
+    val parser = isoDateFormatter()
+    val position = ParsePosition(0)
+    val selectedDate = parser.parse(value, position)
+    if (selectedDate == null || position.index != value.length) return false
     val today = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)

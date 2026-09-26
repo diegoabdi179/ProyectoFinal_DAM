@@ -4,6 +4,20 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
+// La clave de distribución pertenece al propietario y nunca se incluye en el repositorio.
+// Si las cuatro variables están presentes, `assembleRelease` y `bundleRelease` producen un
+// artefacto firmado; de lo contrario se conserva el flujo de compilación unsigned para CI.
+val releaseStoreFilePath = System.getenv("HARVEST_RELEASE_STORE_FILE")
+val releaseStorePassword = System.getenv("HARVEST_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("HARVEST_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("HARVEST_RELEASE_KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.example.harvestdistributionapp"
     compileSdk = 37
@@ -18,10 +32,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
