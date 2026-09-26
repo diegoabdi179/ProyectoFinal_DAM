@@ -83,31 +83,15 @@ fun NavGraph(viewModel: AppViewModel) {
     NavHost(navController = navController, startDestination = Screen.Splash.route) {
         composable(Screen.Splash.route) { SplashScreen(navController, uiState) }
         composable(Screen.Welcome.route) { WelcomeScreen(navController) }
-        composable(Screen.Login.route) {
-            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            LoginScreen(navController, authViewModel)
-        }
-        composable(Screen.SignUp.route) {
-            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            SignUpScreen(navController, authViewModel)
-        }
+        composable(Screen.Login.route) { LoginScreen(navController, viewModel) }
+        composable(Screen.SignUp.route) { SignUpScreen(navController, viewModel) }
         composable(Screen.ForgotPassword.route) { ForgotPasswordScreen(navController) }
 
-        composable(Screen.ProducerHome.route) {
-            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            ProducerHomeScreen(navController, state, productViewModel = productViewModel)
-        }
-        composable(Screen.ProducerProducts.route) {
-            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            ProducerProductsScreen(navController, state, productViewModel = productViewModel)
-        }
-        composable(Screen.ProducerLowStock.route) {
-            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            ProducerProductsScreen(navController, state, productViewModel = productViewModel, lowStockOnly = true)
-        }
+        composable(Screen.ProducerHome.route) { ProducerHomeScreen(navController, state) }
+        composable(Screen.ProducerProducts.route) { ProducerProductsScreen(navController, state) }
+        composable(Screen.ProducerLowStock.route) { ProducerProductsScreen(navController, state, lowStockOnly = true) }
         composable(Screen.ProducerPublish.route) {
-            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            ProducerPublishScreen(navController, state, productViewModel)
+            ProducerPublishScreen(navController, state, viewModel)
         }
         composable(Screen.ProducerRequests.route) { ProducerRequestsScreen(navController, state, viewModel) }
         composable(
@@ -117,10 +101,7 @@ fun NavGraph(viewModel: AppViewModel) {
         composable(
             Screen.ProducerEditProduct.route,
             arguments = listOf(navArgument("productId") { type = NavType.IntType })
-        ) { entry ->
-            val productViewModel: com.example.harvestdistributionapp.viewmodel.ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            ProducerEditProductScreen(navController, state, productViewModel, entry.requireInt("productId"))
-        }
+        ) { entry -> ProducerEditProductScreen(navController, state, viewModel, entry.requireInt("productId")) }
         composable(
             Screen.ProducerSuccess.route,
             arguments = listOf(navArgument("productId") { type = NavType.IntType })
@@ -176,10 +157,7 @@ fun NavGraph(viewModel: AppViewModel) {
         }
 
         composable(Screen.Profile.route) { ProfileScreen(navController, state, viewModel) }
-        composable(Screen.EditProfile.route) {
-            val authViewModel: com.example.harvestdistributionapp.viewmodel.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-            EditProfileScreen(navController, authViewModel)
-        }
+        composable(Screen.EditProfile.route) { EditProfileScreen(navController, state, viewModel) }
         composable(Screen.ProfileInfo.route) { ProfileInfoScreen(navController, state) }
         composable(Screen.Settings.route) { SettingsScreen(navController, state, viewModel) }
     }

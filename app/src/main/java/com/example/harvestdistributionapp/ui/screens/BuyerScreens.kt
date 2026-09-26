@@ -30,10 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.harvestdistributionapp.AppViewModel
-import com.example.harvestdistributionapp.viewmodel.ProductViewModel
-import com.example.harvestdistributionapp.viewmodel.AuthViewModel
-import com.example.harvestdistributionapp.viewmodel.UiState
-import kotlinx.coroutines.tasks.await
 import com.example.harvestdistributionapp.data.*
 import com.example.harvestdistributionapp.ui.components.*
 import com.example.harvestdistributionapp.ui.navigation.Screen
@@ -77,31 +73,9 @@ fun BuyerBottomBar(navController: NavController, currentRoute: String?) {
 @Composable
 fun BuyerHomeScreen(
     navController: NavController,
-    state: AppState,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
-    authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    state: AppState
 ) {
-    val nombreUsuario by authViewModel.nombreUsuario.collectAsState()
-    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
-    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "") }
-
-    LaunchedEffect(firebaseUser?.uid) {
-        val uid = firebaseUser?.uid
-        if (uid != null && nombreUsuario.isBlank() && firestoreName.isBlank()) {
-            try {
-                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                    .collection("usuarios")
-                    .document(uid)
-                    .get()
-                    .await()
-                if (doc.exists()) {
-                    firestoreName = doc.getString("nombre") ?: ""
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    val displayName = nombreUsuario.ifBlank { firestoreName.ifBlank { state.currentUser?.name ?: firebaseUser?.email?.substringBefore("@") ?: "Comprador" } }
+    val displayName = state.currentUser?.name ?: "Comprador"
     val firstName = displayName.trim().split(Regex("\\s+")).firstOrNull() ?: "Comprador"
 
     val initials = run {
@@ -113,7 +87,7 @@ fun BuyerHomeScreen(
     }
 
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
-    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val allProducts = state.products
     val products = allProducts.filter { product ->
         val cat = product.category.ifBlank { "verduras" }
         product.status != AvailabilityStatus.OUT && (selectedCategory == null || cat == selectedCategory)
@@ -234,8 +208,7 @@ private fun BuyerProductCard(product: Product, onClick: () -> Unit) {
 @Composable
 fun BuyerSearchScreen(
     navController: NavController,
-    state: AppState,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    state: AppState
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf<String?>(null) }
@@ -244,7 +217,7 @@ fun BuyerSearchScreen(
     var availability by rememberSaveable { mutableStateOf<AvailabilityStatus?>(null) }
     val localCity = state.currentUser?.location?.substringBefore(',')?.trim().orEmpty()
 
-    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val allProducts = state.products
     val categories = listOf<String?>(null) + allProducts.map { it.category.ifBlank { "verduras" } }.distinct().sorted()
     val prices = listOf<Double?>(null, 20.0, 50.0, 100.0)
     val statuses = listOf<AvailabilityStatus?>(null, AvailabilityStatus.AVAILABLE, AvailabilityStatus.LIMITED, AvailabilityStatus.OUT)
@@ -345,11 +318,9 @@ fun BuyerSearchScreen(
 fun BuyerProductDetailScreen(
     navController: NavController,
     state: AppState,
-    productId: Int,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    productId: Int
 ) {
-    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
-    val product = allProducts.firstOrNull { it.id == productId }
+    val product = state.products.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "Es posible que haya sido eliminado", modifier = Modifier.padding(padding))
@@ -420,11 +391,9 @@ fun BuyerRequestScreen(
     navController: NavController,
     state: AppState,
     viewModel: AppViewModel,
-    productId: Int,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    productId: Int
 ) {
-    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
-    val product = allProducts.firstOrNull { it.id == productId }
+    val product = state.products.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Solicitar producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "Regresa y selecciona otro producto", modifier = Modifier.padding(padding))
@@ -436,27 +405,7 @@ fun BuyerRequestScreen(
     var location by rememberSaveable { mutableStateOf(state.currentUser?.location.orEmpty()) }
     var message by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-
-    val requestState by productViewModel.requestState.collectAsState()
-
-    LaunchedEffect(requestState) {
-        when (val st = requestState) {
-            is UiState.Error -> {
-                error = st.message
-                productViewModel.resetRequestState()
-            }
-            is UiState.Success -> {
-                productViewModel.resetRequestState()
-                navController.navigate(Screen.BuyerHome.route) {
-                    popUpTo(Screen.BuyerHome.route) { inclusive = true }
-                    launchSingleTop = true
-                }
-            }
-            else -> {}
-        }
-    }
-
-    val submitting = requestState is UiState.Loading
+    var submitting by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(topBar = { SmallTopBarM3("Solicitar producto", onBack = navController::popBackStack) }) { padding ->
         Column(
@@ -488,17 +437,22 @@ fun BuyerRequestScreen(
                         error = "Completa todos los campos obligatorios"
                         return@FilledBtn
                     }
-                    productViewModel.crearSolicitud(
-                        productId = product.id,
-                        productName = product.titulo.ifBlank { product.name },
-                        producerId = product.productorId.ifBlank { product.producerId },
-                        quantity = quantity,
-                        pricePerUnit = if (product.precio > 0.0) product.precio else product.pricePerUnit,
-                        requiredDate = date,
-                        location = location,
-                        message = message,
-                        productImageUri = product.imageUri
-                    )
+                    submitting = true
+                    viewModel.createRequest(
+                        RequestDraft(
+                            productId = product.id,
+                            quantity = quantity,
+                            requiredDate = date,
+                            location = location,
+                            message = message
+                        )
+                    ) { result ->
+                        submitting = false
+                        when (result) {
+                            is AppResult.Success -> navController.navigate(Screen.BuyerRequestSent.createRoute(result.value.id))
+                            is AppResult.Error -> error = result.message
+                        }
+                    }
                 }
             )
         }
@@ -566,16 +520,11 @@ fun BuyerRequestSentScreen(navController: NavController, state: AppState, reques
 @Composable
 fun BuyerMyRequestsScreen(
     navController: NavController,
-    state: AppState,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    state: AppState
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf("Todas", "Pendientes", "Aceptadas", "Rechazadas")
-    val requests by productViewModel.solicitudesFlow.collectAsState(initial = emptyList())
-    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
-    val currentBuyerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
-
-    val ownRequests = requests.filter { it.buyerId == currentBuyerId }
+    val ownRequests = state.requests.filter { it.buyerId == state.currentUserId }
     val filtered = ownRequests.filter { request ->
         when (selectedTab) {
             1 -> request.status == RequestStatus.PENDING
@@ -690,10 +639,9 @@ fun BuyerPostResultsScreen(
     productName: String,
     quantity: Int,
     date: String,
-    location: String,
-    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    location: String
 ) {
-    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val allProducts = state.products
     val matches = allProducts.filter { product ->
         val name = product.titulo.ifBlank { product.name }
         val stock = if (product.stock > 0) product.stock else product.quantity
