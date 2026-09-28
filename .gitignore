@@ -13,10 +13,3 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-# Material criptográfico de firma: nunca incluirlo en el repositorio.
-*.jks
-*.keystore
-*.p12
-*.pem
-key.properties

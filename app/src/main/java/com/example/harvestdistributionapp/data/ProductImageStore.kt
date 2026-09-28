@@ -8,8 +8,6 @@ import java.io.File
 import java.util.UUID
 
 object ProductImageStore {
-    private const val MAX_IMAGE_BYTES = 10L * 1024L * 1024L
-
     suspend fun copyToPrivateStorage(context: Context, source: Uri, mimeType: String): AppResult<String> =
         withContext(Dispatchers.IO) {
             val extension = when (mimeType) {
@@ -25,19 +23,7 @@ object ProductImageStore {
             runCatching {
                 val input = context.contentResolver.openInputStream(source)
                     ?: error("No se pudo abrir la imagen seleccionada")
-                input.use { sourceStream ->
-                    destination.outputStream().use { destinationStream ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var totalBytes = 0L
-                        while (true) {
-                            val bytesRead = sourceStream.read(buffer)
-                            if (bytesRead < 0) break
-                            totalBytes += bytesRead
-                            check(totalBytes <= MAX_IMAGE_BYTES) { "La imagen supera el límite de 10 MB" }
-                            destinationStream.write(buffer, 0, bytesRead)
-                        }
-                    }
-                }
+                input.use { sourceStream -> destination.outputStream().use(sourceStream::copyTo) }
                 check(destination.length() > 0L) { "La imagen seleccionada está vacía" }
                 Uri.fromFile(destination).toString()
             }.fold(
