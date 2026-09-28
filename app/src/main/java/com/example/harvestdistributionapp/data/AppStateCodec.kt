@@ -77,11 +77,6 @@ object AppStateCodec {
 
     private fun encodeProduct(product: Product) = JSONObject().apply {
         put("id", product.id)
-        put("productorId", product.productorId.ifBlank { product.producerId })
-        put("titulo", product.titulo.ifBlank { product.name })
-        put("descripcion", product.descripcion)
-        put("precio", if (product.precio > 0.0) product.precio else product.pricePerUnit)
-        put("stock", if (product.stock > 0) product.stock else product.quantity)
         put("producerId", product.producerId)
         put("producerName", product.producerName)
         put("name", product.name)
@@ -96,22 +91,17 @@ object AppStateCodec {
     }
 
     private fun decodeProduct(json: JSONObject) = Product(
-        id = json.optInt("id"),
-        productorId = json.optString("productorId", json.optString("producerId")),
-        titulo = json.optString("titulo", json.optString("name")),
-        descripcion = json.optString("descripcion"),
-        precio = json.optDouble("precio", json.optDouble("pricePerUnit")),
-        stock = json.optInt("stock", json.optInt("quantity")),
-        producerId = json.optString("producerId", json.optString("productorId")),
-        producerName = json.optString("producerName"),
-        name = json.optString("name", json.optString("titulo")),
-        quantity = json.optInt("quantity", json.optInt("stock")),
-        unit = json.optString("unit", "kg"),
-        pricePerUnit = json.optDouble("pricePerUnit", json.optDouble("precio")),
+        id = json.getInt("id"),
+        producerId = json.getString("producerId"),
+        producerName = json.getString("producerName"),
+        name = json.getString("name"),
+        quantity = json.getInt("quantity"),
+        unit = json.getString("unit"),
+        pricePerUnit = json.getDouble("pricePerUnit"),
         status = json.optEnum("status", AvailabilityStatus.AVAILABLE),
-        location = json.optString("location"),
-        availableDate = json.optString("availableDate"),
-        imageUri = json.optString("imageUri"),
+        location = json.getString("location"),
+        availableDate = json.getString("availableDate"),
+        imageUri = json.getString("imageUri"),
         category = json.optString("category", "otros")
     )
 

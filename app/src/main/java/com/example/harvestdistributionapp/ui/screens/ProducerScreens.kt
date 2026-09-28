@@ -23,6 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import com.example.harvestdistributionapp.viewmodel.ProductViewModel
+import com.example.harvestdistributionapp.viewmodel.UiState
+import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -68,9 +72,31 @@ fun ProducerBottomBar(navController: NavController, currentRoute: String?) {
 @Composable
 fun ProducerHomeScreen(
     navController: NavController,
-    state: AppState
+    state: AppState,
+    authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val displayName = state.currentUser?.name ?: "Productor"
+    val nombreUsuario by authViewModel.nombreUsuario.collectAsState()
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "") }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null && nombreUsuario.isBlank() && firestoreName.isBlank()) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreName = doc.getString("nombre") ?: ""
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    val displayName = nombreUsuario.ifBlank { firestoreName.ifBlank { state.currentUser?.name ?: firebaseUser?.email?.substringBefore("@") ?: "Productor" } }
     val firstName = displayName.trim().split(Regex("\\s+")).firstOrNull() ?: "Productor"
 
     val initials = run {
@@ -81,8 +107,9 @@ fun ProducerHomeScreen(
         if (res.isBlank()) "--" else res
     }
 
-    val currentProducerId = state.currentUserId.orEmpty()
-    val products = state.products.filter { it.productorId == currentProducerId || it.producerId == currentProducerId }
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+    val products = allProducts.filter { it.productorId == currentProducerId || it.producerId == currentProducerId }
     val requests = state.requests.filter { it.producerId == currentProducerId }
     val lowStock = products.count { it.status != AvailabilityStatus.AVAILABLE || (if (it.stock > 0) it.stock <= 25 else it.quantity <= 25) }
     Scaffold(
@@ -194,13 +221,15 @@ private fun ProducerProductCard(product: Product, onClick: () -> Unit, onEdit: (
 fun ProducerProductsScreen(
     navController: NavController,
     state: AppState,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     lowStockOnly: Boolean = false
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var statusFilter by rememberSaveable { mutableStateOf<AvailabilityStatus?>(null) }
     
-    val allProducts = state.products
-    val currentProducerId = state.currentUserId.orEmpty()
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
     
     val ownProducts = allProducts.filter { it.productorId == currentProducerId || it.producerId == currentProducerId }
     val products = ownProducts.filter { product ->
@@ -285,9 +314,11 @@ fun ProducerProductsScreen(
 fun ProducerProductDetailScreen(
     navController: NavController,
     state: AppState,
-    productId: Int
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val product = state.products.firstOrNull { it.id == productId }
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     Scaffold(
         topBar = {
             SmallTopBarM3(
@@ -326,13 +357,14 @@ fun ProducerProductDetailScreen(
 }
 
 @Composable
-fun ProducerPublishScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
+fun ProducerPublishScreen(navController: NavController, state: AppState, viewModel: ProductViewModel) {
     ProductEditorScreen(navController, state, viewModel, existing = null)
 }
 
 @Composable
-fun ProducerEditProductScreen(navController: NavController, state: AppState, viewModel: AppViewModel, productId: Int) {
-    val product = state.products.firstOrNull { it.id == productId }
+fun ProducerEditProductScreen(navController: NavController, state: AppState, viewModel: ProductViewModel, productId: Int) {
+    val allProducts by viewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     if (product == null) {
         Scaffold(topBar = { SmallTopBarM3("Editar producto", onBack = navController::popBackStack) }) { padding ->
             EmptyState("Producto no encontrado", "No puedes editar este producto", modifier = Modifier.padding(padding))
@@ -342,7 +374,7 @@ fun ProducerEditProductScreen(navController: NavController, state: AppState, vie
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProductEditorScreen(navController: NavController, state: AppState, viewModel: AppViewModel, existing: Product?) {
+private fun ProductEditorScreen(navController: NavController, state: AppState, viewModel: ProductViewModel, existing: Product?) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val productOptions = listOf("Jitomate Saladette", "Lechuga Orejona", "Miel artesanal", "Aguacate Hass", "Fresa de temporada", "Otro")
@@ -361,7 +393,24 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
     var category by rememberSaveable { mutableStateOf(existing?.category ?: "verduras") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var photoSaving by remember { mutableStateOf(false) }
-    var submitting by rememberSaveable { mutableStateOf(false) }
+
+    val publishState by viewModel.publishState.collectAsState()
+
+    LaunchedEffect(publishState) {
+        when (val st = publishState) {
+            is UiState.Error -> {
+                error = st.message
+                viewModel.resetPublishState()
+            }
+            is UiState.Success -> {
+                viewModel.resetPublishState()
+                navController.popBackStack()
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = publishState is UiState.Loading
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
@@ -474,36 +523,29 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
                 testTag = "product_submit",
                 onClick = {
                     if (!valid) { error = "Completa todos los campos y agrega una foto válida"; return@FilledBtn }
-                    submitting = true
-                    val draft = ProductDraft(
-                        name = name,
-                        quantity = parsedQuantity!!,
-                        unit = unit,
-                        pricePerUnit = parsedPrice!!,
-                        location = location,
-                        availableDate = availableDate,
-                        imageUri = imageUri,
-                        category = category
-                    )
                     if (existing == null) {
-                        viewModel.createProduct(draft) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Success -> navController.popBackStack()
-                                is AppResult.Error -> error = result.message
-                            }
-                        }
+                        viewModel.publicarProducto(
+                            name = name,
+                            quantity = parsedQuantity!!,
+                            unit = unit,
+                            pricePerUnit = parsedPrice!!,
+                            location = location,
+                            availableDate = availableDate,
+                            imageUri = imageUri,
+                            category = category
+                        )
                     } else {
-                        viewModel.updateProduct(existing.id, draft) { result ->
-                            submitting = false
-                            when (result) {
-                                is AppResult.Success -> navController.navigate(Screen.ProducerProductDetail.createRoute(existing.id)) {
-                                    popUpTo(Screen.ProducerEditProduct.createRoute(existing.id)) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                                is AppResult.Error -> error = result.message
-                            }
-                        }
+                        viewModel.actualizarProducto(
+                            productId = existing.id,
+                            name = name,
+                            quantity = parsedQuantity!!,
+                            unit = unit,
+                            pricePerUnit = parsedPrice!!,
+                            location = location,
+                            availableDate = availableDate,
+                            imageUri = imageUri,
+                            category = category
+                        )
                     }
                 }
             )
@@ -515,9 +557,11 @@ private fun ProductEditorScreen(navController: NavController, state: AppState, v
 fun ProducerSuccessScreen(
     navController: NavController,
     state: AppState,
-    productId: Int
+    productId: Int,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
-    val product = state.products.firstOrNull { it.id == productId }
+    val allProducts by productViewModel.productosFlow.collectAsState(initial = emptyList())
+    val product = allProducts.firstOrNull { it.id == productId }
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -550,13 +594,18 @@ fun ProducerSuccessScreen(
 fun ProducerRequestsScreen(
     navController: NavController,
     state: AppState,
-    viewModel: AppViewModel
+    viewModel: AppViewModel,
+    productViewModel: ProductViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var message by rememberSaveable { mutableStateOf<String?>(null) }
     val tabs = listOf("Todas", "Pendientes", "Aceptadas", "Rechazadas")
 
-    val own = state.requests.filter { it.producerId == state.currentUserId }
+    val allRequests by productViewModel.producerRequestsFlow.collectAsState(initial = emptyList())
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    val currentProducerId = firebaseUser?.uid ?: state.currentUserId.orEmpty()
+
+    val own = allRequests.filter { it.producerId == currentProducerId }
     val filtered = own.filter {
         when (selectedTab) {
             1 -> it.status == RequestStatus.PENDING
@@ -586,8 +635,8 @@ fun ProducerRequestsScreen(
                             request,
                             onOpen = { navController.navigate(Screen.ProducerRequestDetail.createRoute(request.id)) },
                             onStatus = { status ->
-                                viewModel.updateRequestStatus(request.id, status) { result ->
-                                    if (result is AppResult.Error) message = result.message
+                                productViewModel.actualizarEstadoSolicitud(request.id, status) { success ->
+                                    if (!success) message = "Error al actualizar estado"
                                 }
                             }
                         )

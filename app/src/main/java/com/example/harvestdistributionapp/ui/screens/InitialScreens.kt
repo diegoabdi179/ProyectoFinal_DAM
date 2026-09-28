@@ -33,6 +33,9 @@ import com.example.harvestdistributionapp.data.UserAccount
 import com.example.harvestdistributionapp.data.UserRole
 import com.example.harvestdistributionapp.ui.components.*
 import com.example.harvestdistributionapp.ui.navigation.Screen
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import com.example.harvestdistributionapp.viewmodel.UiState
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.delay
 
 @Composable
@@ -112,11 +115,49 @@ fun WelcomeScreen(navController: NavController) {
 }
 
 @Composable
-fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
+fun LoginScreen(navController: NavController, viewModel: AuthViewModel) {
+    val email by viewModel.email.collectAsState()
+    val password by viewModel.password.collectAsState()
+    val authState by viewModel.authState.collectAsState()
+
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var submitting by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is UiState.Error -> {
+                errorMessage = state.message
+                viewModel.resetState()
+            }
+            is UiState.Success -> {
+                val uid = state.data.uid
+                try {
+                    val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("usuarios")
+                        .document(uid)
+                        .get()
+                        .await()
+                    val rolDb = doc.getString("rol") ?: "comprador"
+                    val destination = if (rolDb.equals("productor", ignoreCase = true)) {
+                        Screen.ProducerHome.route
+                    } else {
+                        Screen.BuyerHome.route
+                    }
+                    navController.navigate(destination) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                } catch (_: Exception) {
+                    navController.navigate(Screen.BuyerHome.route) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = authState is UiState.Loading
 
     Scaffold(topBar = { SmallTopBarM3("Bienvenido", onBack = navController::popBackStack) }) { padding ->
         Column(
@@ -129,7 +170,7 @@ fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Correo electrónico",
                 value = email,
-                onValueChange = { email = it; errorMessage = null },
+                onValueChange = { viewModel.onEmailChanged(it); errorMessage = null },
                 type = "email",
                 trailingIcon = Icons.Default.Mail,
                 testTag = "login_email",
@@ -138,7 +179,7 @@ fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Contraseña",
                 value = password,
-                onValueChange = { password = it; errorMessage = null },
+                onValueChange = { viewModel.onPasswordChanged(it); errorMessage = null },
                 type = "password",
                 testTag = "login_password",
                 enabled = !submitting
@@ -152,16 +193,7 @@ fun LoginScreen(navController: NavController, viewModel: AppViewModel) {
                 )
             }
             Button(
-                onClick = {
-                    submitting = true
-                    viewModel.login(email, password) { result ->
-                        submitting = false
-                        when (result) {
-                            is AppResult.Success -> navigateAfterAuthentication(navController, result.value)
-                            is AppResult.Error -> errorMessage = result.message
-                        }
-                    }
-                },
+                onClick = { viewModel.loginUser() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
@@ -231,15 +263,40 @@ fun ForgotPasswordScreen(navController: NavController) {
 }
 
 @Composable
-fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var role by rememberSaveable { mutableStateOf(UserRole.BUYER) }
-    var submitting by rememberSaveable { mutableStateOf(false) }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+fun SignUpScreen(navController: NavController, viewModel: AuthViewModel) {
+    val name by viewModel.nombre.collectAsState()
+    val email by viewModel.email.collectAsState()
+    val password by viewModel.password.collectAsState()
+    val rol by viewModel.rol.collectAsState()
+    val authState by viewModel.authState.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is UiState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                viewModel.resetState()
+            }
+            is UiState.Success -> {
+                val destination = if (state.rol.trim().equals("productor", ignoreCase = true)) {
+                    Screen.ProducerHome.route
+                } else {
+                    Screen.BuyerHome.route
+                }
+                navController.navigate(destination) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            else -> {}
+        }
+    }
+
+    val submitting = authState is UiState.Loading
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { SmallTopBarM3("Crear cuenta", onBack = navController::popBackStack) }
     ) { padding ->
         Column(
@@ -252,7 +309,7 @@ fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Nombre completo",
                 value = name,
-                onValueChange = { name = it; errorMessage = null },
+                onValueChange = { viewModel.onNombreChanged(it) },
                 trailingIcon = Icons.Default.Person,
                 testTag = "signup_name",
                 enabled = !submitting
@@ -260,7 +317,7 @@ fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Correo electrónico",
                 value = email,
-                onValueChange = { email = it; errorMessage = null },
+                onValueChange = { viewModel.onEmailChanged(it) },
                 type = "email",
                 trailingIcon = Icons.Default.Mail,
                 testTag = "signup_email",
@@ -269,9 +326,9 @@ fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
             M3Field(
                 label = "Contraseña",
                 value = password,
-                onValueChange = { password = it; errorMessage = null },
+                onValueChange = { viewModel.onPasswordChanged(it) },
                 type = "password",
-                supportingText = "Mínimo 8 caracteres, con letra y número",
+                supportingText = "Mínimo 6 caracteres",
                 testTag = "signup_password",
                 enabled = !submitting
             )
@@ -280,30 +337,20 @@ fun SignUpScreen(navController: NavController, viewModel: AppViewModel) {
                 "Soy productor",
                 "Publica tu disponibilidad y atiende solicitudes.",
                 Icons.Default.Agriculture,
-                role == UserRole.PRODUCER,
-                { role = UserRole.PRODUCER },
+                rol == "productor",
+                { viewModel.onRolChanged("productor") },
                 "role_producer"
             )
             RoleOption(
                 "Soy comprador",
                 "Encuentra productos locales y solicita cantidades reales.",
                 Icons.Default.LocalGroceryStore,
-                role == UserRole.BUYER,
-                { role = UserRole.BUYER },
+                rol == "comprador",
+                { viewModel.onRolChanged("comprador") },
                 "role_buyer"
             )
-            errorMessage?.let { ErrorBanner(it) }
             Button(
-                onClick = {
-                    submitting = true
-                    viewModel.signUp(name, email, password, role) { result ->
-                        submitting = false
-                        when (result) {
-                            is AppResult.Success -> navigateAfterAuthentication(navController, result.value)
-                            is AppResult.Error -> errorMessage = result.message
-                        }
-                    }
-                },
+                onClick = { viewModel.registerUser() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)

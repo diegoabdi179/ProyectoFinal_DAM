@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
-import java.util.Locale
 
 private val Context.harvestDataStore by preferencesDataStore(name = "harvest_distribution_state")
 
@@ -136,11 +135,6 @@ class PersistentAppRepository(private val context: Context) : AppRepository {
             ?: return AppResult.Error("Inicia sesión como productor")
         val product = Product(
             id = (snapshot.products.maxOfOrNull(Product::id) ?: 0) + 1,
-            productorId = producer.id,
-            titulo = draft.name.trim(),
-            descripcion = "",
-            precio = draft.pricePerUnit,
-            stock = draft.quantity,
             producerId = producer.id,
             producerName = producer.name,
             name = draft.name.trim(),
@@ -151,7 +145,7 @@ class PersistentAppRepository(private val context: Context) : AppRepository {
             location = draft.location.trim(),
             availableDate = draft.availableDate,
             imageUri = draft.imageUri,
-            category = draft.category.trim().lowercase(Locale.ROOT)
+            category = draft.category.trim().lowercase()
         )
         mutate { it.copy(products = it.products + product) }
         return AppResult.Success(product)
@@ -165,10 +159,6 @@ class PersistentAppRepository(private val context: Context) : AppRepository {
         val existing = snapshot.products.firstOrNull { it.id == productId && it.producerId == producer.id }
             ?: return AppResult.Error("No se encontró el producto")
         val updated = existing.copy(
-            productorId = existing.productorId.ifBlank { producer.id },
-            titulo = draft.name.trim(),
-            precio = draft.pricePerUnit,
-            stock = draft.quantity,
             name = draft.name.trim(),
             quantity = draft.quantity,
             unit = draft.unit.trim(),
@@ -177,7 +167,7 @@ class PersistentAppRepository(private val context: Context) : AppRepository {
             location = draft.location.trim(),
             availableDate = draft.availableDate,
             imageUri = draft.imageUri,
-            category = draft.category.trim().lowercase(Locale.ROOT)
+            category = draft.category.trim().lowercase()
         )
         mutate { state -> state.copy(products = state.products.map { if (it.id == productId) updated else it }) }
         return AppResult.Success(updated)
@@ -233,11 +223,7 @@ class PersistentAppRepository(private val context: Context) : AppRepository {
             snapshot.products.map {
                 if (it.id == product.id) {
                     val remaining = it.quantity - existing.quantity
-                    it.copy(
-                        quantity = remaining,
-                        stock = remaining,
-                        status = availabilityForQuantity(remaining)
-                    )
+                    it.copy(quantity = remaining, status = availabilityForQuantity(remaining))
                 } else it
             }
         } else snapshot.products

@@ -22,6 +22,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.harvestdistributionapp.AppViewModel
+import com.example.harvestdistributionapp.viewmodel.AuthViewModel
+import kotlinx.coroutines.tasks.await
 import com.example.harvestdistributionapp.BuildConfig
 import com.example.harvestdistributionapp.data.*
 import com.example.harvestdistributionapp.ui.components.*
@@ -30,24 +32,55 @@ import com.example.harvestdistributionapp.ui.theme.SurfaceContainerHigh
 
 @Composable
 fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreRole by remember { mutableStateOf("") }
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "Usuario") }
+    var firestoreLocation by remember { mutableStateOf("Toluca, Estado de México") }
+    var firestoreBusiness by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreRole = doc.getString("rol") ?: ""
+                    firestoreName = doc.getString("nombre") ?: firebaseUser.displayName ?: "Usuario"
+                    firestoreLocation = doc.getString("ubicacion") ?: "Toluca, Estado de México"
+                    firestoreBusiness = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+        isLoading = false
+    }
+
     val user = state.currentUser
-    val isProducer = user?.role == UserRole.PRODUCER
-    val ownProducts = state.products.count { it.producerId == user?.id || it.productorId == user?.id }
-    val attended = state.requests.count { it.producerId == user?.id && it.status != RequestStatus.PENDING }
+    val role = if (user != null) {
+        if (user.role == UserRole.PRODUCER) "productor" else "comprador"
+    } else {
+        firestoreRole
+    }
+
+    val isProducer = role.equals("productor", ignoreCase = true)
+    val ownProducts = state.products.count { it.producerId == (user?.id ?: firebaseUser?.uid) }
+    val attended = state.requests.count { it.producerId == (user?.id ?: firebaseUser?.uid) && it.status != RequestStatus.PENDING }
 
     Scaffold(
         topBar = { SmallTopBarM3("Perfil") },
         bottomBar = {
-            if (user != null) {
-                if (isProducer) {
-                    ProducerBottomBar(navController, Screen.Profile.route)
-                } else {
-                    BuyerBottomBar(navController, Screen.Profile.route)
-                }
+            if (role.isNotBlank() && !isLoading) {
+                if (isProducer) ProducerBottomBar(navController, Screen.Profile.route)
+                else BuyerBottomBar(navController, Screen.Profile.route)
             }
         }
     ) { padding ->
-        if (user == null) {
+        val currentUser = user
+        if (firebaseUser == null && currentUser == null) {
             EmptyState(
                 title = "Sesión no disponible",
                 message = "Vuelve a iniciar sesión para consultar tu perfil",
@@ -57,9 +90,20 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
             return@Scaffold
         }
 
-        val name = user.name
-        val location = user.location
-        val businessName = user.businessName
+        // Condición de guardia: Si el rol está vacío (""), nulo o cargando, mostrar únicamente un CircularProgressIndicator centrado
+        if (role.isBlank() || isLoading) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+
+        val name = currentUser?.name ?: firestoreName.ifBlank { firebaseUser?.email?.substringBefore("@") ?: "Usuario" }
+        val location = currentUser?.location ?: firestoreLocation.ifBlank { "Toluca, Estado de México" }
+        val businessName = currentUser?.businessName ?: firestoreBusiness
 
         Column(
             modifier = Modifier
@@ -149,20 +193,39 @@ fun ProfileScreen(navController: NavController, state: AppState, viewModel: AppV
 }
 
 @Composable
-fun EditProfileScreen(navController: NavController, state: AppState, viewModel: AppViewModel) {
-    val user = state.currentUser
-    var name by rememberSaveable { mutableStateOf(user?.name.orEmpty()) }
-    var location by rememberSaveable { mutableStateOf(user?.location.orEmpty()) }
-    var businessName by rememberSaveable { mutableStateOf(user?.businessName.orEmpty()) }
+fun EditProfileScreen(navController: NavController, viewModel: AuthViewModel) {
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+
+    var name by rememberSaveable { mutableStateOf(firebaseUser?.displayName.orEmpty()) }
+    var location by rememberSaveable { mutableStateOf("") }
+    var businessName by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var saving by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    name = doc.getString("nombre") ?: firebaseUser.displayName.orEmpty()
+                    location = doc.getString("ubicacion").orEmpty()
+                    businessName = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     Scaffold(topBar = { SmallTopBarM3("Editar perfil", navController::popBackStack) }) { padding ->
         Column(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (user == null) {
+            if (firebaseUser == null) {
                 ErrorBanner("No hay una sesión activa")
                 return@Scaffold
             }
@@ -170,7 +233,7 @@ fun EditProfileScreen(navController: NavController, state: AppState, viewModel: 
             M3Field("Ubicación", location, { location = it }, testTag = "edit_profile_location", enabled = !saving)
             M3Field("Nombre del negocio", businessName, { businessName = it }, testTag = "edit_profile_business", enabled = !saving)
             Text("Correo", style = MaterialTheme.typography.labelLarge)
-            Text(user.email, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("edit_profile_email"))
+            Text(firebaseUser.email.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("edit_profile_email"))
             error?.let { ErrorBanner(it) }
             FilledBtn(
                 text = if (saving) "Guardando…" else "Guardar cambios",
@@ -181,11 +244,12 @@ fun EditProfileScreen(navController: NavController, state: AppState, viewModel: 
                     }
                     if (error == null) {
                         saving = true
-                        viewModel.updateProfile(name, location, businessName) { result ->
+                        viewModel.updateFirestoreProfile(name, location, businessName) { success, msg ->
                             saving = false
-                            when (result) {
-                                is AppResult.Success -> navController.popBackStack()
-                                is AppResult.Error -> error = result.message
+                            if (success) {
+                                navController.popBackStack()
+                            } else {
+                                error = msg
                             }
                         }
                     }
@@ -200,11 +264,42 @@ fun EditProfileScreen(navController: NavController, state: AppState, viewModel: 
 
 @Composable
 fun ProfileInfoScreen(navController: NavController, state: AppState) {
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+    var firestoreRole by remember { mutableStateOf("") }
+    var firestoreName by remember { mutableStateOf(firebaseUser?.displayName ?: "Usuario") }
+    var firestoreLocation by remember { mutableStateOf("Toluca, Estado de México") }
+    var firestoreBusiness by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(firebaseUser?.uid) {
+        val uid = firebaseUser?.uid
+        if (uid != null) {
+            try {
+                val doc = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("usuarios")
+                    .document(uid)
+                    .get()
+                    .await()
+                if (doc.exists()) {
+                    firestoreRole = doc.getString("rol") ?: ""
+                    firestoreName = doc.getString("nombre") ?: firebaseUser.displayName ?: "Usuario"
+                    firestoreLocation = doc.getString("ubicacion") ?: "Toluca, Estado de México"
+                    firestoreBusiness = doc.getString("negocio").orEmpty()
+                }
+            } catch (_: Exception) {}
+        }
+        isLoading = false
+    }
+
     val user = state.currentUser
-    val role = if (user?.role == UserRole.PRODUCER) "productor" else "comprador"
+    val role = if (user != null) {
+        if (user.role == UserRole.PRODUCER) "productor" else "comprador"
+    } else {
+        firestoreRole
+    }
 
     Scaffold(topBar = { SmallTopBarM3("Mi información", navController::popBackStack) }) { padding ->
-        if (user == null) {
+        if (firebaseUser == null) {
             Column(
                 Modifier.padding(padding).fillMaxSize().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -214,15 +309,26 @@ fun ProfileInfoScreen(navController: NavController, state: AppState) {
             return@Scaffold
         }
 
-        val name = user.name
-        val email = user.email
-        val roleStr = if (role.equals("productor", ignoreCase = true)) "Productor" else "Comprador"
-        val location = user.location
-        val businessName = user.businessName
+        // Condición de guardia
+        if (role.isBlank() || isLoading) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
 
-        val ownProducts = state.products.filter { it.producerId == user.id || it.productorId == user.id }
+        val name = user?.name ?: firestoreName
+        val email = user?.email ?: firebaseUser.email.orEmpty()
+        val roleStr = if (role.equals("productor", ignoreCase = true)) "Productor" else "Comprador"
+        val location = user?.location ?: firestoreLocation
+        val businessName = user?.businessName ?: firestoreBusiness
+
+        val ownProducts = state.products.filter { it.producerId == (user?.id ?: firebaseUser.uid) }
         val ownRequests = state.requests.filter {
-            if (role.equals("productor", ignoreCase = true)) it.producerId == user.id else it.buyerId == user.id
+            if (role.equals("productor", ignoreCase = true)) it.producerId == (user?.id ?: firebaseUser.uid) else it.buyerId == (user?.id ?: firebaseUser.uid)
         }
 
         Column(
@@ -238,7 +344,7 @@ fun ProfileInfoScreen(navController: NavController, state: AppState) {
                 InfoCard("Productos publicados", ownProducts.size.toString())
             }
             InfoCard("Solicitudes", ownRequests.size.toString())
-            InfoBanner("Los datos de esta versión se guardan localmente en el dispositivo.")
+            InfoBanner("Los datos de esta versión se sincronizan con Firebase Firestore.")
         }
     }
 }
